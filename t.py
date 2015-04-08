@@ -27,5 +27,18 @@ def hex_to_bytes(hex):
         r.append((int(hex[i], 16) << 4) + int(hex[i + 1], 16))
     return r
 
+def bytes_to_hex(bytes):
+    r = ""
+    for b in bytes:
+        r += "%x" % (b)
+    return r
+
 def hex_to_base64(hex):
     return bytes_to_base64(hex_to_bytes(hex))
+
+def fixed_xor_bytes(left_bytes, right_bytes):
+    assert(len(left_bytes) == len(right_bytes))
+    return [a ^ b for (a, b) in zip(left_bytes, right_bytes)]
+
+def fixed_xor(left, right):
+    return bytes_to_hex(fixed_xor_bytes(hex_to_bytes(left), hex_to_bytes(right)))
