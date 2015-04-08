@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import string
+
 def bytes_to_base64_array(bytes):
     r = []
     for i in range(0, len(bytes), 3):
@@ -37,25 +39,53 @@ def hex_to_base64(hex):
     return bytes_to_base64(hex_to_bytes(hex))
 
 def fixed_xor_bytes(left_bytes, right_bytes):
-    assert(len(left_bytes) == len(right_bytes))
+    assert(len(left_bytes) == len(right_bytes)), "fixed_xor_bytes called with len(left) != len(right)"
     return [a ^ b for (a, b) in zip(left_bytes, right_bytes)]
 
 def fixed_xor(left, right):
     return bytes_to_hex(fixed_xor_bytes(hex_to_bytes(left), hex_to_bytes(right)))
 
 def defeat_single_byte_xor(hex):
-    RD = "zxjqkgbvpywfmculdrhsnioate" #"etaoinshrdlucmfwypvbgkqjxz"
+    RD = "'XZYQKJVUWOLENIHDGFBTRPMCAS.zxjqkgbvpywfmculdrhsnioate " #"etaoinshrdlucmfwypvbgkqjxz"
+    #RD = ".zxjqkgbvpywfmculdrhsnioate " #"etaoinshrdlucmfwypvbgkqjxz"
+    MIN_NORM_SCORE = 1500 # magic number to filter out credible-to-a-machine garbage
     bytes = hex_to_bytes(hex)
 
     guesses = {}
     for guess in range(256):
         key = [guess for g in range(len(bytes))]
         r = fixed_xor_bytes(bytes, key)
-        score = sum([RD.find(chr(b)) for b in r])
-        guesses[score] = guess
+        score = sum([((x < 0) and -100 or x*x) for x in [RD.find(chr(b)) for b in r]])
 
-    best_guess = guesses[max(guesses.keys())]
+        # get rid of low scoring garbage
+        if score/len(bytes) > MIN_NORM_SCORE:
+
+            # make sure all scores put in guesses hash
+            while guesses.has_key(score):
+                score += 1
+
+            guesses[score] = guess
+
+    best_guess = 0
+    guessed_bytes = []
+    while len(guesses.keys()) > 0:
+        best_guess = guesses[max(guesses.keys())]
+        guessed_bytes = fixed_xor_bytes(bytes, [best_guess for g in range(len(bytes))])
+        found_it = True
+
+        for b in guessed_bytes:
+            if not chr(b) in string.printable:
+                del guesses[max(guesses.keys())]
+                found_it = False
+                break
+        
+        if found_it:
+            break
+
+    assert len(guesses.keys()) > 0, "Failed to guess key"
 
     return { 'key': best_guess,
-             'decoded': ''.join([chr(b) for b in fixed_xor_bytes(bytes, [best_guess for g in range(len(bytes))])]) }
+             'decoded': ''.join([chr(b) for b in guessed_bytes]),
+             'score': max(guesses.keys()),
+             'norm_score': max(guesses.keys())/len(guessed_bytes) }
 
