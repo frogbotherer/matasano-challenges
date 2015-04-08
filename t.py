@@ -9,7 +9,6 @@ def bytes_to_base64_array(bytes):
           c += bytes[i + j] << (16 - 8 * j)
        for j in range(4):
           r.append(0x3F & (c >> (18 - 6 * j)))
-       print "%d %d" %(c,j)
     return r
 
 def base64_array_to_base64(b64_array):
