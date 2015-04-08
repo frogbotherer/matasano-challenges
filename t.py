@@ -38,6 +38,20 @@ def bytes_to_hex(bytes):
 def hex_to_base64(hex):
     return bytes_to_base64(hex_to_bytes(hex))
 
+def hamming_distance_bytes(left_bytes, right_bytes):
+    assert len(left_bytes) == len(right_bytes), "didn't write for boundary condition when len(left) != len(right)"
+    # xor each byte then count bits
+    z = [a ^ b for (a, b) in zip(left_bytes, right_bytes)]
+    r = 0
+    for b in z:
+        while b > 0:
+            r += b & 0x1
+            b >>= 1
+    return r
+
+def hamming_distance(left, right):
+    return hamming_distance_bytes([ord(c) for c in left], [ord(c) for c in right])
+
 def fixed_xor_bytes(left_bytes, right_bytes):
     assert(len(left_bytes) == len(right_bytes)), "fixed_xor_bytes called with len(left) != len(right)"
     return [a ^ b for (a, b) in zip(left_bytes, right_bytes)]
