@@ -32,7 +32,7 @@ def hex_to_bytes(hex):
 def bytes_to_hex(bytes):
     r = ""
     for b in bytes:
-        r += "%x" % (b)
+        r += "%02x" % b
     return r
 
 def hex_to_base64(hex):
@@ -44,6 +44,15 @@ def fixed_xor_bytes(left_bytes, right_bytes):
 
 def fixed_xor(left, right):
     return bytes_to_hex(fixed_xor_bytes(hex_to_bytes(left), hex_to_bytes(right)))
+
+def repeating_key_xor(msg, key):
+    assert len(key) < len(msg), "repeating key must be shorter than message to encode"
+    assert len(key) > 0, "key length > 0"
+    repeating_key = ''.join([key for i in range(len(msg) / len(key))])
+    repeating_key += key[:len(msg)-len(repeating_key)]
+    assert len(repeating_key) == len(msg), "oops"
+
+    return bytes_to_hex(fixed_xor_bytes([ord(c) for c in msg], [ord(c) for c in repeating_key]))
 
 def defeat_single_byte_xor(hex):
     RD = "'XZYQKJVUWOLENIHDGFBTRPMCAS.zxjqkgbvpywfmculdrhsnioate " #"etaoinshrdlucmfwypvbgkqjxz"
