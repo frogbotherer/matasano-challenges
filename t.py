@@ -42,3 +42,20 @@ def fixed_xor_bytes(left_bytes, right_bytes):
 
 def fixed_xor(left, right):
     return bytes_to_hex(fixed_xor_bytes(hex_to_bytes(left), hex_to_bytes(right)))
+
+def defeat_single_byte_xor(hex):
+    RD = "zxjqkgbvpywfmculdrhsnioate" #"etaoinshrdlucmfwypvbgkqjxz"
+    bytes = hex_to_bytes(hex)
+
+    guesses = {}
+    for guess in range(256):
+        key = [guess for g in range(len(bytes))]
+        r = fixed_xor_bytes(bytes, key)
+        score = sum([RD.find(chr(b)) for b in r])
+        guesses[score] = guess
+
+    best_guess = guesses[max(guesses.keys())]
+
+    return { 'key': best_guess,
+             'decoded': ''.join([chr(b) for b in fixed_xor_bytes(bytes, [best_guess for g in range(len(bytes))])]) }
+
