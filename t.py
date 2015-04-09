@@ -38,6 +38,31 @@ def bytes_to_hex(bytes):
 def hex_to_base64(hex):
     return bytes_to_base64(hex_to_bytes(hex))
 
+def base64_to_array(b64):
+    r = []
+    D = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    for c in b64:
+        if c == '=': break
+        r.append(D.index(c))
+    return r 
+
+def base64_array_to_bytes(b64_array):
+    r = []
+    for i in range(0, len(b64_array), 4):
+        c = 0
+        for j in range(0, 4):
+            if i + j >= len(b64_array):
+                break
+            c |= b64_array[i + j] << (18 - j)
+        r.append(c)
+    return r
+
+def base64_to_bytes(b64):
+    return base64_array_to_bytes(base64_to_array(b64))
+
+def base64_to_hex(b64):
+    return bytes_to_hex(base64_to_bytes(b64))
+
 def hamming_distance_bytes(left_bytes, right_bytes):
     assert len(left_bytes) == len(right_bytes), "didn't write for boundary condition when len(left) != len(right)"
     # xor each byte then count bits
@@ -112,3 +137,22 @@ def defeat_single_byte_xor(hex):
              'score': max(guesses.keys()),
              'norm_score': max(guesses.keys())/len(guessed_bytes) }
 
+def defeat_repeating_key_xor(b64):
+    bytes = base64_to_bytes(b64)
+    KEYSIZE_MIN = 2
+    KEYSIZE_MAX = 40
+    KEYSIZE_BLOCKS = 4
+
+    keysize_guesses = {}
+
+    for keysize in range(KEYSIZE_MIN, KEYSIZE_MAX):
+        distances = []
+        for i in range(0, keysize * KEYSIZE_BLOCKS, keysize):
+            distances.append(hamming_distance_bytes(bytes[i:i + keysize], bytes[i + keysize:i + keysize * 2]))
+        total_dist = sum(distances)
+        keysize_guesses.setdefault(total_dist, []).append(keysize)
+
+    ks = keysize_guesses.keys()
+    ks.sort()
+    for k in ks:
+        print " -- %s: %s" %(k, keysize_guesses[k])
