@@ -50,11 +50,12 @@ def base64_array_to_bytes(b64_array):
     r = []
     for i in range(0, len(b64_array), 4):
         c = 0
-        for j in range(0, 4):
+        for j in range(4):
             if i + j >= len(b64_array):
                 break
-            c |= b64_array[i + j] << (18 - j)
-        r.append(c)
+            c |= b64_array[i + j] << (18 - j * 6)
+        for j in range(3):
+            r.append((c >> (16 - 8 * j)) & 0xFF)
     return r
 
 def base64_to_bytes(b64):
@@ -93,11 +94,20 @@ def repeating_key_xor(msg, key):
 
     return bytes_to_hex(fixed_xor_bytes([ord(c) for c in msg], [ord(c) for c in repeating_key]))
 
+def decode_repeating_key_xor(bytes, key):
+    repeating_key = ''.join([key for i in range(len(bytes) / len(key))])
+    repeating_key += key[:len(bytes)-len(repeating_key)]
+    assert len(repeating_key) == len(bytes), "oops"
+
+    return ''.join([chr(b) for b in fixed_xor_bytes(bytes, [ord(c) for c in repeating_key])])
+
 def defeat_single_byte_xor(hex):
+    return defeat_single_byte_xor_bytes(hex_to_bytes(hex))
+
+def defeat_single_byte_xor_bytes(bytes):
     RD = "'XZYQKJVUWOLENIHDGFBTRPMCAS.zxjqkgbvpywfmculdrhsnioate " #"etaoinshrdlucmfwypvbgkqjxz"
     #RD = ".zxjqkgbvpywfmculdrhsnioate " #"etaoinshrdlucmfwypvbgkqjxz"
     MIN_NORM_SCORE = 1500 # magic number to filter out credible-to-a-machine garbage
-    bytes = hex_to_bytes(hex)
 
     guesses = {}
     for guess in range(256):
@@ -142,17 +152,50 @@ def defeat_repeating_key_xor(b64):
     KEYSIZE_MIN = 2
     KEYSIZE_MAX = 40
     KEYSIZE_BLOCKS = 4
+    TRY_KEYS = 5
 
     keysize_guesses = {}
+    key_tries = []
 
     for keysize in range(KEYSIZE_MIN, KEYSIZE_MAX):
         distances = []
         for i in range(0, keysize * KEYSIZE_BLOCKS, keysize):
             distances.append(hamming_distance_bytes(bytes[i:i + keysize], bytes[i + keysize:i + keysize * 2]))
-        total_dist = sum(distances)
+        total_dist = sum(distances) / keysize
         keysize_guesses.setdefault(total_dist, []).append(keysize)
 
+    # put top key sizes into key_tries array
     ks = keysize_guesses.keys()
     ks.sort()
     for k in ks:
-        print " -- %s: %s" %(k, keysize_guesses[k])
+        #print " -- %s: %s" %(k, keysize_guesses[k])
+        for s in keysize_guesses[k]:
+            key_tries.append(s)
+            if len(key_tries)>TRY_KEYS:
+                break
+
+    #print key_tries
+
+    key = []
+    found_it = False
+    for keysize in key_tries:
+        key = []
+        trans_bytes = [[] for x in range(keysize)]
+        for i in range(0, len(bytes) - (len(bytes) % keysize), keysize):
+            for j in range(keysize):
+                trans_bytes[j].append(bytes[i + j])
+        try:
+            for block in trans_bytes:
+                key.append(defeat_single_byte_xor_bytes(block)['key'])
+            found_it = True
+        except Exception, e:
+            pass #print "!! %s %s" % (block, e.message)
+        if found_it: break
+
+    if not found_it:
+        return {}
+
+    key_str = ''.join([chr(b) for b in key])
+    return {
+        'key': key_str,
+        'decoded': decode_repeating_key_xor(bytes, key_str) }
