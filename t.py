@@ -79,6 +79,16 @@ def hamming_distance_bytes(left_bytes, right_bytes):
 def hamming_distance(left, right):
     return hamming_distance_bytes([ord(c) for c in left], [ord(c) for c in right])
 
+def pkcs7_padding_bytes(bytes, to_len):
+    pad = to_len - len(bytes)
+    assert pad >= 0, "byte array longer than desired pad"
+    assert pad < 256, "too much padding required"
+
+    return bytes + [pad for i in range(pad)]
+
+def pkcs7_padding(s, to_len):
+    return ''.join([chr(b) for b in pkcs7_padding_bytes([ord(c) for c in s], to_len)])
+
 def fixed_xor_bytes(left_bytes, right_bytes):
     assert(len(left_bytes) == len(right_bytes)), "fixed_xor_bytes called with len(left) != len(right)"
     return [a ^ b for (a, b) in zip(left_bytes, right_bytes)]
