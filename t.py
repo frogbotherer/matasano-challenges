@@ -200,3 +200,27 @@ def defeat_repeating_key_xor(b64):
     return {
         'key': key_str,
         'decoded': decode_repeating_key_xor(bytes, key_str) }
+
+def detect_aes_128_ecb(hex):
+    return detect_aes_128_ecb_bytes(hex_to_bytes(hex))
+
+def detect_aes_128_ecb_bytes(bytes):
+    BLOCK_SIZE = 16
+    blocks = []
+    for i in range(0, len(bytes) - (len(bytes) % BLOCK_SIZE), BLOCK_SIZE):
+        blocks.append(bytes[i : i + BLOCK_SIZE])
+
+    distances = []
+    for block in blocks:
+        for vs_block in blocks:
+            distance = hamming_distance_bytes(block, vs_block)
+            if not block is vs_block:
+                distances.append(distance)
+
+    return {
+        'min': min(distances),
+        'max': max(distances),
+        'avg': sum(distances) / len(distances),
+        'range': max(distances) - min(distances),
+        'count': len(distances),
+        'is_aes_128_ecb': min(distances) == 0 }
