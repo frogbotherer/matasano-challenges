@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import string
+#import Crypto  # pip install PyCrypto
 
 def bytes_to_base64_array(bytes):
     r = []
