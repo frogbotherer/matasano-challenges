@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import string
-#import Crypto  # pip install PyCrypto
+from Crypto.Cipher import AES  # pip install PyCrypto
 
 def bytes_to_base64_array(bytes):
     r = []
@@ -64,6 +64,14 @@ def base64_to_bytes(b64):
 
 def base64_to_hex(b64):
     return bytes_to_hex(base64_to_bytes(b64))
+
+def encrypt_aes_128_ecb(s, key):
+    o = AES.new(key, AES.MODE_ECB)
+    return o.encrypt(s)
+
+def decrypt_aes_128_ecb(s, key):
+    o = AES.new(key, AES.MODE_ECB)
+    return o.decrypt(s)
 
 def hamming_distance_bytes(left_bytes, right_bytes):
     assert len(left_bytes) == len(right_bytes), "didn't write for boundary condition when len(left) != len(right)"
