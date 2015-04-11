@@ -120,6 +120,17 @@ def decode_repeating_key_xor(bytes, key):
 
     return ''.join([chr(b) for b in fixed_xor_bytes(bytes, [ord(c) for c in repeating_key])])
 
+def decrypt_aes_128_cbc_bytes(bytes, key, iv):
+    assert len(bytes) % 16 == 0, "bytes should be a multiple of 16 in length"
+    r = []
+    last_block = iv
+    for block in range(0, len(bytes), 16):
+        decrypted = [ord(c) for c in decrypt_aes_128_ecb(''.join([chr(b) for b in bytes[block : block + 16]]), key)]
+        decrypted = fixed_xor_bytes(last_block, decrypted)
+        last_block = bytes[block : block + 16]
+        r.extend(decrypted)
+    return r
+
 def defeat_single_byte_xor(hex):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex))
 
