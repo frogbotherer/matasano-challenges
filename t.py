@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-import string
+import string  # for printable
+import random  # for randint
 from Crypto.Cipher import AES  # pip install PyCrypto
 
 def bytes_to_base64_array(bytes):
@@ -67,6 +68,8 @@ def base64_to_hex(b64):
 
 def encrypt_aes_128_ecb(s, key):
     o = AES.new(key, AES.MODE_ECB)
+    if len(s) % 16 != 0:
+        s = pkcs7_padding(s, len(s) + 16 - len(s) % 16)
     return o.encrypt(s)
 
 def decrypt_aes_128_ecb(s, key):
@@ -97,12 +100,21 @@ def pkcs7_padding_bytes(bytes, to_len):
 def pkcs7_padding(s, to_len):
     return ''.join([chr(b) for b in pkcs7_padding_bytes([ord(c) for c in s], to_len)])
 
+def random_aes_key_bytes():
+    return [random.randint(0, 255) for i in range(16)]
+
+def random_aes_key():
+    return ''.join([chr(c) for c in random_aes_key_bytes()])
+
 def fixed_xor_bytes(left_bytes, right_bytes):
     assert(len(left_bytes) == len(right_bytes)), "fixed_xor_bytes called with len(left) != len(right)"
     return [a ^ b for (a, b) in zip(left_bytes, right_bytes)]
 
-def fixed_xor(left, right):
+def fixed_xor_hex(left, right):
     return bytes_to_hex(fixed_xor_bytes(hex_to_bytes(left), hex_to_bytes(right)))
+
+def fixed_xor(left, right):
+    return ''.join([chr(b) for b in fixed_xor_bytes([ord(c) for c in left], [ord(c) for c in right])])
 
 def repeating_key_xor(msg, key):
     assert len(key) < len(msg), "repeating key must be shorter than message to encode"
@@ -121,14 +133,31 @@ def decode_repeating_key_xor(bytes, key):
     return ''.join([chr(b) for b in fixed_xor_bytes(bytes, [ord(c) for c in repeating_key])])
 
 def decrypt_aes_128_cbc_bytes(bytes, key, iv):
-    assert len(bytes) % 16 == 0, "bytes should be a multiple of 16 in length"
-    r = []
+    return [ord(c) for c in decrypt_aes_128_cbc(''.join([chr(b) for b in bytes]), key, ''.join([chr(c) for c in iv]))]
+
+def decrypt_aes_128_cbc(s, key, iv):
+    assert len(s) % 16 == 0, "s should be a multiple of 16 in length"
+    r = ""
     last_block = iv
-    for block in range(0, len(bytes), 16):
-        decrypted = [ord(c) for c in decrypt_aes_128_ecb(''.join([chr(b) for b in bytes[block : block + 16]]), key)]
-        decrypted = fixed_xor_bytes(last_block, decrypted)
-        last_block = bytes[block : block + 16]
-        r.extend(decrypted)
+    for i in range(0, len(s), 16):
+        block = s[i : i + 16]
+        decrypted = decrypt_aes_128_ecb(block, key)
+        decrypted = fixed_xor(last_block, decrypted)
+        last_block = block
+        r += decrypted
+    return r
+
+def encrypt_aes_128_cbc(s, key, iv):
+    r = ""
+    last_cipher = iv
+    if len(s) % 16 != 0:
+        s = pkcs7_padding(s, len(s) + 16 - len(s) % 16)
+
+    for i in range(0, len(s), 16):
+        block = fixed_xor(s[i : i + 16], last_cipher)
+        encrypted = encrypt_aes_128_ecb(block, key)
+        last_cipher = encrypted
+        r += encrypted
     return r
 
 def defeat_single_byte_xor(hex):
@@ -253,3 +282,14 @@ def detect_aes_128_ecb_bytes(bytes):
         'range': max(distances) - min(distances),
         'count': len(distances),
         'is_aes_128_ecb': min(distances) == 0 }
+
+def encryption_oracle(s):
+    s2 = ''.join([chr(random.randint(0, 255)) for i in range(random.randint(5, 10))]) \
+         + s \
+         + ''.join([chr(random.randint(0, 255)) for i in range(random.randint(5, 10))])
+
+    if random.randint(0, 1):
+        return encrypt_aes_128_ecb(s2, random_aes_key())
+
+    else:
+        return encrypt_aes_128_cbc(s2, random_aes_key(), random_aes_key())
