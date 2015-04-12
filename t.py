@@ -78,9 +78,12 @@ def encrypt_aes_128_ecb(s, key):
         s = pkcs7_padding(s, len(s) + 16 - len(s) % 16)
     return o.encrypt(s)
 
-def decrypt_aes_128_ecb(s, key):
+def decrypt_aes_128_ecb(s, key, unpad=True):
     o = AES.new(key, AES.MODE_ECB)
-    return pkcs7_unpadding(o.decrypt(s), 16)
+    if unpad:
+        return pkcs7_unpadding(o.decrypt(s), 16)
+    else:
+        return o.decrypt(s)
 
 def hamming_distance_bytes(left_bytes, right_bytes):
     assert len(left_bytes) == len(right_bytes), "didn't write for boundary condition when len(left) != len(right)"
@@ -160,7 +163,7 @@ def decrypt_aes_128_cbc(s, key, iv):
     last_block = iv
     for i in range(0, len(s), 16):
         block = s[i : i + 16]
-        decrypted = decrypt_aes_128_ecb(block, key)
+        decrypted = decrypt_aes_128_ecb(block, key, unpad=False)
         decrypted = fixed_xor(last_block, decrypted)
         last_block = block
         r += decrypted
@@ -414,3 +417,20 @@ def ecb_mitm(s, oracle):
     r = r[:32] + admin_block
     # return result
     return r
+
+CBC_ORACLE_KEY = random_aes_key()
+CBC_ORACLE_IV = random_aes_key()
+def cbc_oracle(userdata):
+    s = "comment1=cooking%20MCs;userdata=" \
+        + userdata.replace(';', '%3b').replace('=', '%3d') \
+        + ";comment2=%20like%20a%20pound%20of%20bacon"
+    return encrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV)
+
+def is_admin(s):
+    decrypted = decrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV)
+    print decrypted
+    return "admin=true" in decrypted.split(';')
+
+def defeat_cbc_bitflip():
+    pass 
+    
