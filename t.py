@@ -69,6 +69,9 @@ def base64_to_bytes(b64):
 def base64_to_hex(b64):
     return bytes_to_hex(base64_to_bytes(b64))
 
+def base64_to_str(b64):
+    return ''.join([chr(b) for b in base64_to_bytes(b64)])
+
 def encrypt_aes_128_ecb(s, key):
     o = AES.new(key, AES.MODE_ECB)
     if len(s) % 16 != 0:
@@ -302,3 +305,38 @@ def is_ecb_or_cbc():
     a = detect_aes_128_ecb_bytes([ord(c) for c in q])
 
     return "%s is %s" % (str_to_hex(q), a['is_aes_128_ecb'] and "ECB" or "CBC")
+
+ECB_ORACLE_FIXED_KEY = random_aes_key()
+def encryption_oracle_ecb_fixed_key(s, secret):
+    return encrypt_aes_128_ecb(s + secret, ECB_ORACLE_FIXED_KEY)
+
+def defeat_ecb_fixed_key_with_oracle(secret):
+    # get block size
+    cipher_size = len(encryption_oracle_ecb_fixed_key("A", secret))
+    next_cipher_size = cipher_size
+    attempt = "A"
+    while cipher_size == next_cipher_size:
+        attempt += "A"
+        next_cipher_size = len(encryption_oracle_ecb_fixed_key(attempt, secret))
+    block_size = next_cipher_size - cipher_size
+
+    # detect ecb
+    assert detect_aes_128_ecb_bytes([ord(c) for c in encryption_oracle_ecb_fixed_key("A" * 64, secret)])['is_aes_128_ecb'], "oops not ecb"
+
+    # break ecb
+    bodge_block = "A" * (block_size - 1)
+    r = ""
+    for i in range(block_size): #range(len(cipher_size)):
+        encrypted_block = encryption_oracle_ecb_fixed_key(bodge_block, secret)[:block_size]
+
+        # assume encrypted value is printable
+        for c in string.printable:
+            try_block = encryption_oracle_ecb_fixed_key(bodge_block + r + c, secret)[:block_size]
+            if try_block == encrypted_block:
+                r += c
+                bodge_block = bodge_block[1:]
+                break
+
+    return r
+
+
