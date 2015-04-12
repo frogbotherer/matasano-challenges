@@ -428,9 +428,41 @@ def cbc_oracle(userdata):
 
 def is_admin(s):
     decrypted = decrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV)
-    print decrypted
     return "admin=true" in decrypted.split(';')
 
+def flip_bit(byte, bit):
+    # bit 0 = lsb
+    return (byte ^ (1 << bit)) | (byte & (0xFF - (1 << bit)))
+
+def flip_bit_chr(c, bit):
+    return chr(flip_bit(ord(c), bit))
+
 def defeat_cbc_bitflip():
-    pass 
-    
+    # find a block boundary after prefix
+    #  - find right amount of As to get to end of block (i think i need to guess this too :()
+    block_size = 16
+    first_block_end = ""
+
+    #  - find how many prefix blocks (i think you need to guess this :()
+    prefix_offset = block_size * 2
+
+    # both of these values (prefix_offset and first_block_end) are evident from the unencrypted prefix,
+    # but we could do a nested for-loop to guess them without too much bother -- there's only about 80
+    # bytes in the whole cipher
+
+    # supply a block of sacrificial As
+    # supply a block containing :admin<true (i.e. LSBs flipped from ; and =)
+    # send to oracle
+    s = cbc_oracle(first_block_end + ("A" * block_size) + ":admin<true")
+
+    # flip LSB in bytes 1 and 7 of sacrificial block
+    s = s[:prefix_offset] \
+        + flip_bit_chr(s[prefix_offset], 0) \
+        + s[prefix_offset + 1 : prefix_offset + 6] \
+        + flip_bit_chr(s[prefix_offset + 6], 0) \
+        + s[prefix_offset + 7:]
+
+    # pass back to is_admin
+    r = is_admin(s)
+    assert r, "oops"
+    return r
