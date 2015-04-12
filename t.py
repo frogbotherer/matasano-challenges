@@ -37,6 +37,9 @@ def bytes_to_hex(bytes):
         r += "%02x" % b
     return r
 
+def str_to_hex(s):
+    return ''.join(["%02x" % ord(r) for r in s])
+
 def hex_to_base64(hex):
     return bytes_to_base64(hex_to_bytes(hex))
 
@@ -293,3 +296,9 @@ def encryption_oracle(s):
 
     else:
         return encrypt_aes_128_cbc(s2, random_aes_key(), random_aes_key())
+
+def is_ecb_or_cbc():
+    q = encryption_oracle("A" * 64)
+    a = detect_aes_128_ecb_bytes([ord(c) for c in q])
+
+    return "%s is %s" % (str_to_hex(q), a['is_aes_128_ecb'] and "ECB" or "CBC")
