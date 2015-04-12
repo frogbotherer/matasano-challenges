@@ -1,0 +1,4 @@
+import t
+secret = t.base64_to_str("Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
+
+print t.defeat_ecb_fixed_key_with_oracle(secret, t.encryption_oracle_ecb_fixed_key_leading_junk)

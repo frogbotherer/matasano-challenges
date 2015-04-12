@@ -319,29 +319,52 @@ ECB_ORACLE_FIXED_KEY = random_aes_key()
 def encryption_oracle_ecb_fixed_key(s, secret):
     return encrypt_aes_128_ecb(s + secret, ECB_ORACLE_FIXED_KEY)
 
-def defeat_ecb_fixed_key_with_oracle(secret):
+ECB_ORACLE_LEADING_JUNK = ''.join([chr(random.randint(0, 255)) for i in range(random.randint(5, 50))])
+def encryption_oracle_ecb_fixed_key_leading_junk(s, secret):
+    return encrypt_aes_128_ecb(ECB_ORACLE_LEADING_JUNK + s + secret, ECB_ORACLE_FIXED_KEY)
+
+def defeat_ecb_fixed_key_with_oracle(secret, oracle=encryption_oracle_ecb_fixed_key):
     # get block size
-    cipher_size = len(encryption_oracle_ecb_fixed_key("A", secret))
+    cipher_size = len(oracle("A", secret))
     next_cipher_size = cipher_size
     attempt = "A"
     while cipher_size == next_cipher_size:
         attempt += "A"
-        next_cipher_size = len(encryption_oracle_ecb_fixed_key(attempt, secret))
+        next_cipher_size = len(oracle(attempt, secret))
     block_size = next_cipher_size - cipher_size
 
     # detect ecb
-    assert detect_aes_128_ecb_bytes([ord(c) for c in encryption_oracle_ecb_fixed_key("A" * 64, secret)])['is_aes_128_ecb'], "oops not ecb"
+    assert detect_aes_128_ecb_bytes([ord(c) for c in oracle("A" * block_size * 4, secret)])['is_aes_128_ecb'], "oops not ecb"
+
+    # calculate size of leading junk (if any)
+    o = oracle("A" * block_size * 4, secret)
+    #  - find out encrypted version of all As block
+    all_as_block = ""
+    for i in range(0, len(o), block_size):
+        if o[i : i + block_size] == o[i + block_size : i + block_size * 2]:
+            all_as_block = o[i : i + block_size]
+            break
+
+    #  - decrement number of As until one all As block disappears
+    a_count = block_size * 2  # guarantees a block of all As
+    while oracle("A" * a_count, secret).find(all_as_block) > -1:
+        a_count -= 1
+    a_count += 1
+    #  - this number mod 16 is number of As that trail junk before block boundary
+    #  - junk occupies all blocks before all As, minus number above
+    junk_length = oracle("A" * a_count, secret).find(all_as_block) - a_count % block_size
 
     # break ecb
-    bodge_block = "A" * (cipher_size - 1)
+    bodge_block = "A" * ((cipher_size - junk_length) - 1)
     block_offset = cipher_size - block_size
+
     r = ""
     for i in range(cipher_size):
-        encrypted_block = encryption_oracle_ecb_fixed_key(bodge_block, secret)[block_offset : block_offset + block_size]
+        encrypted_block = oracle(bodge_block, secret)[block_offset : block_offset + block_size]
 
         # assume encrypted value is printable
         for c in string.printable:
-            try_block = encryption_oracle_ecb_fixed_key(bodge_block + r + c, secret)[block_offset : block_offset + block_size]
+            try_block = oracle(bodge_block + r + c, secret)[block_offset : block_offset + block_size]
             if try_block == encrypted_block:
                 r += c
                 bodge_block = bodge_block[1:]
