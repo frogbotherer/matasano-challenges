@@ -108,6 +108,10 @@ def pkcs7_padding(s, to_len):
 
 def pkcs7_unpadding_bytes(bytes, block_size):
     if bytes[-1] < block_size:
+        if bytes[-1] == 0:
+            raise ValueError, "Invalid pkcs7 padding: last byte is 0x0"
+        if bytes[-1 * bytes[-1]:] != [bytes[-1] for b in range(bytes[-1])]:
+            raise ValueError, "Invalid pkcs7 padding: last byte is %d but trailing bytes are %s" % (bytes[-1], bytes[-1 * bytes[-1]:])
         return bytes[:-1 * bytes[-1]]
     else:
         return bytes
