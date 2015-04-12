@@ -324,14 +324,15 @@ def defeat_ecb_fixed_key_with_oracle(secret):
     assert detect_aes_128_ecb_bytes([ord(c) for c in encryption_oracle_ecb_fixed_key("A" * 64, secret)])['is_aes_128_ecb'], "oops not ecb"
 
     # break ecb
-    bodge_block = "A" * (block_size - 1)
+    bodge_block = "A" * (cipher_size - 1)
+    block_offset = cipher_size - block_size
     r = ""
-    for i in range(block_size): #range(len(cipher_size)):
-        encrypted_block = encryption_oracle_ecb_fixed_key(bodge_block, secret)[:block_size]
+    for i in range(cipher_size):
+        encrypted_block = encryption_oracle_ecb_fixed_key(bodge_block, secret)[block_offset : block_offset + block_size]
 
         # assume encrypted value is printable
         for c in string.printable:
-            try_block = encryption_oracle_ecb_fixed_key(bodge_block + r + c, secret)[:block_size]
+            try_block = encryption_oracle_ecb_fixed_key(bodge_block + r + c, secret)[block_offset : block_offset + block_size]
             if try_block == encrypted_block:
                 r += c
                 bodge_block = bodge_block[1:]
