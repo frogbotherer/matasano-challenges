@@ -80,7 +80,7 @@ def encrypt_aes_128_ecb(s, key):
 
 def decrypt_aes_128_ecb(s, key):
     o = AES.new(key, AES.MODE_ECB)
-    return o.decrypt(s)
+    return pkcs7_unpadding(o.decrypt(s), 16)
 
 def hamming_distance_bytes(left_bytes, right_bytes):
     assert len(left_bytes) == len(right_bytes), "didn't write for boundary condition when len(left) != len(right)"
@@ -105,6 +105,15 @@ def pkcs7_padding_bytes(bytes, to_len):
 
 def pkcs7_padding(s, to_len):
     return ''.join([chr(b) for b in pkcs7_padding_bytes([ord(c) for c in s], to_len)])
+
+def pkcs7_unpadding_bytes(bytes, block_size):
+    if bytes[-1] < block_size:
+        return bytes[:-1 * bytes[-1]]
+    else:
+        return bytes
+
+def pkcs7_unpadding(s, block_size):
+    return ''.join([chr(b) for b in pkcs7_unpadding_bytes([ord(c) for c in s], block_size)])
 
 def random_aes_key_bytes():
     return [random.randint(0, 255) for i in range(16)]
@@ -340,4 +349,41 @@ def defeat_ecb_fixed_key_with_oracle(secret):
 
     return r
 
+def parse_kv(s):
+    r = {}
+    for (k, v) in [x.split('=') for x in s.split('&')]:
+        r[k] = v
+    return r
 
+def profile_for(email):
+    return "email=%s&uid=%d&role=user" % (email.replace('&', '%26').replace('=', '%3d'), 10)
+
+def defeat_ecb_mitm(email, mitm_cb=lambda a, o: a):
+    key = random_aes_key()
+
+    # prep oracle
+    oracle = lambda x: encrypt_aes_128_ecb(profile_for(x), key)
+    
+    # encrypt profile
+    s = oracle(email)
+
+    # provide to attacker
+    s = mitm_cb(s, oracle)
+
+    # decrypt profile
+    return parse_kv(decrypt_aes_128_ecb(s, key))
+
+def ecb_mitm(s, oracle):
+    # supply e-mail address of As, then "admin" + pkcs7 padding, such that "a" of "admin" is aligned with block start
+    #0123456789abcdef0123456789abcdef
+    #email=AAAAAAAAAAadmin-----------
+    admin_block = oracle(("A" * 10) + pkcs7_padding("admin", 16))[16:32]
+    # supply e-mail address that puts = of role= at end of block and get encrypted string
+    #0123456789abcdef0123456789abcdef0123456789abcdef
+    #email=AAAAAAAAAAAAA&uid=10&role=
+    #r = oracle("A" * 13)  ## or how about an e-mail addr to a domain that we control
+    r = oracle("AAAA@evil.com")
+    # substitute last block with encrypted "admin" block
+    r = r[:32] + admin_block
+    # return result
+    return r
