@@ -100,7 +100,10 @@ def hamming_distance(left, right):
     return hamming_distance_bytes([ord(c) for c in left], [ord(c) for c in right])
 
 def pkcs7_padding_bytes(bytes, to_len):
+    # "If the original data is a multiple of N bytes, then an extra block of bytes with value N is added."
     pad = to_len - len(bytes)
+    if pad == 0:
+        pad = to_len
     assert pad >= 0, "byte array longer than desired pad"
     assert pad < 256, "too much padding required"
 
@@ -110,14 +113,11 @@ def pkcs7_padding(s, to_len):
     return ''.join([chr(b) for b in pkcs7_padding_bytes([ord(c) for c in s], to_len)])
 
 def pkcs7_unpadding_bytes(bytes, block_size):
-    if bytes[-1] < block_size:
-        if bytes[-1] == 0:
-            raise ValueError, "Invalid pkcs7 padding: last byte is 0x0"
-        if bytes[-1 * bytes[-1]:] != [bytes[-1] for b in range(bytes[-1])]:
-            raise ValueError, "Invalid pkcs7 padding: last byte is %d but trailing bytes are %s" % (bytes[-1], bytes[-1 * bytes[-1]:])
-        return bytes[:-1 * bytes[-1]]
-    else:
-        return bytes
+    if bytes[-1] == 0:
+        raise ValueError, "Invalid pkcs7 padding: last byte is 0x0"
+    if bytes[-1 * bytes[-1]:] != [bytes[-1] for b in range(bytes[-1])]:
+        raise ValueError, "Invalid pkcs7 padding: last byte is %d but trailing bytes are %s" % (bytes[-1], bytes[-1 * bytes[-1]:])
+    return bytes[:-1 * bytes[-1]]
 
 def pkcs7_unpadding(s, block_size):
     return ''.join([chr(b) for b in pkcs7_unpadding_bytes([ord(c) for c in s], block_size)])
@@ -157,7 +157,7 @@ def decode_repeating_key_xor(bytes, key):
 def decrypt_aes_128_cbc_bytes(bytes, key, iv):
     return [ord(c) for c in decrypt_aes_128_cbc(''.join([chr(b) for b in bytes]), key, ''.join([chr(c) for c in iv]))]
 
-def decrypt_aes_128_cbc(s, key, iv):
+def decrypt_aes_128_cbc(s, key, iv, use_strict_pkcs7=False):
     assert len(s) % 16 == 0, "s should be a multiple of 16 in length"
     r = ""
     last_block = iv
@@ -165,6 +165,8 @@ def decrypt_aes_128_cbc(s, key, iv):
         block = s[i : i + 16]
         decrypted = decrypt_aes_128_ecb(block, key, unpad=False)
         decrypted = fixed_xor(last_block, decrypted)
+        if use_strict_pkcs7 and ord(decrypted[-1]) < 16:
+            decrypted = pkcs7_unpadding(decrypted, 16)
         last_block = block
         r += decrypted
     return r
@@ -172,8 +174,8 @@ def decrypt_aes_128_cbc(s, key, iv):
 def encrypt_aes_128_cbc(s, key, iv):
     r = ""
     last_cipher = iv
-    if len(s) % 16 != 0:
-        s = pkcs7_padding(s, len(s) + 16 - len(s) % 16)
+    # if s ends on a block boundary, add a whole block of padding
+    s = pkcs7_padding(s, len(s) + 16 - len(s) % 16)
 
     for i in range(0, len(s), 16):
         block = fixed_xor(s[i : i + 16], last_cipher)
@@ -426,6 +428,18 @@ def cbc_oracle(userdata):
         + ";comment2=%20like%20a%20pound%20of%20bacon"
     return encrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV)
 
+def encrypt_random_cbc(strings):
+    return encrypt_aes_128_cbc(random.choice(strings), CBC_ORACLE_KEY, CBC_ORACLE_IV)
+
+def check_cbc_padding(s):
+    m = ""
+    try:
+        m = decrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV, use_strict_pkcs7=True)
+    except ValueError, e:
+        return False
+    print m
+    return True
+
 def is_admin(s):
     decrypted = decrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV)
     return "admin=true" in decrypted.split(';')
@@ -465,4 +479,20 @@ def defeat_cbc_bitflip():
     # pass back to is_admin
     r = is_admin(s)
     assert r, "oops"
+    return r
+
+def defeat_cbc_padding_oracle(s):
+    r = ""
+    block_size = 16
+    for i in range(len(s) - block_size * 2, -1, -1 * block_size):
+        tamper_chunk = [ord(c) for c in s[i : i + block_size]]
+        found_chunk = []
+        for j in range(block_size - 1, -1, -1):
+            for b in range(0, 256):
+                new_chunk = tamper_chunk[:j] + [b] + found_chunk
+                if check_cbc_padding(s[:i] + ''.join([chr(c) for c in new_chunk]) + s[i + block_size : i + block_size * 2]):
+                    print b
+                    found_chunk = [b] + found_chunk
+                    break
+        print found_chunk
     return r
