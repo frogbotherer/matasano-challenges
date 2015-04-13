@@ -165,7 +165,7 @@ def decrypt_aes_128_cbc(s, key, iv, use_strict_pkcs7=False):
         block = s[i : i + 16]
         decrypted = decrypt_aes_128_ecb(block, key, unpad=False)
         decrypted = fixed_xor(last_block, decrypted)
-        if use_strict_pkcs7 and ord(decrypted[-1]) < 16:
+        if i == len(s) - 16 and (use_strict_pkcs7 or ord(decrypted[-1]) <= 16):
             decrypted = pkcs7_unpadding(decrypted, 16)
         last_block = block
         r += decrypted
@@ -437,7 +437,6 @@ def check_cbc_padding(s):
         m = decrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV, use_strict_pkcs7=True)
     except ValueError, e:
         return False
-    print m
     return True
 
 def is_admin(s):
@@ -486,13 +485,17 @@ def defeat_cbc_padding_oracle(s):
     block_size = 16
     for i in range(len(s) - block_size * 2, -1, -1 * block_size):
         tamper_chunk = [ord(c) for c in s[i : i + block_size]]
-        found_chunk = []
+        intermediate_chunk = []
+        padding_chunk = []
         for j in range(block_size - 1, -1, -1):
+            padding_byte = block_size - j
             for b in range(0, 256):
-                new_chunk = tamper_chunk[:j] + [b] + found_chunk
-                if check_cbc_padding(s[:i] + ''.join([chr(c) for c in new_chunk]) + s[i + block_size : i + block_size * 2]):
-                    print b
-                    found_chunk = [b] + found_chunk
+                new_chunk = tamper_chunk[:j] + [b] + padding_chunk
+                try_s = s[:i] + ''.join([chr(c) for c in new_chunk]) + s[i + block_size : i + block_size * 2]
+                if check_cbc_padding(try_s):
+                    intermediate_chunk = [b ^ padding_byte] + intermediate_chunk
+                    #padding_chunk =  # must decrypt to 0x2, then [0x3,0x3], ... [padding_byte+1] * padding_byte
+                    padding_chunk = fixed_xor_bytes(intermediate_chunk, [padding_byte + 1] * padding_byte)
                     break
-        print found_chunk
+        r = fixed_xor(s[i : i + block_size], ''.join([chr(b) for b in intermediate_chunk])) + r
     return r

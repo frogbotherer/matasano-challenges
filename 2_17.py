@@ -15,4 +15,7 @@ s = t.encrypt_random_cbc(data)
 
 assert t.check_cbc_padding(s), "oops"
 
-print t.defeat_cbc_padding_oracle(s)
+r = t.defeat_cbc_padding_oracle(s)
+
+print r
+print t.base64_to_str(r)
