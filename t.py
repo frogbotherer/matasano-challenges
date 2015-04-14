@@ -184,6 +184,26 @@ def encrypt_aes_128_cbc(s, key, iv):
         r += encrypted
     return r
 
+def decrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
+    block_size = 16
+    r = ""
+    for i in range(0, len(s), block_size):
+        ctr = int(i / block_size)
+        ctr_li = ""
+        for b in range(0, 64, 8):
+            ctr_li += chr(0xff & (ctr >> b))
+        keystream = encrypt_aes_128_ecb(nonce[::-1] + ctr_li, key)
+
+        if i + block_size > len(s):
+            # last block doesn't align to boundary
+            r += fixed_xor(s[i:], keystream[: len(s) % block_size])
+        else:
+            r += fixed_xor(s[i : i + block_size], keystream)
+    return r
+
+def encrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
+    return decrypt_aes_128_ctr(s, key, nonce)
+
 def defeat_single_byte_xor(hex):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex))
 
