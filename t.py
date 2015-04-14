@@ -485,23 +485,23 @@ def defeat_cbc_padding_oracle(s, iv):
     block_size = 16
     s = iv + s
     for i in range(len(s) - block_size * 2, -1, -1 * block_size):
-        tamper_chunk = [ord(c) for c in s[i : i + block_size]]
-        intermediate_chunk = []
-        padding_chunk = []
+        tamper_chunk = s[i : i + block_size]
+        intermediate_chunk = ""
+        padding_chunk = ""
         scan_from_byte = 0
         j = block_size - 1
         while j >= 0:  # while rather than for because we need to reset the counter
             padding_byte = block_size - j
             for b in range(scan_from_byte, 256):
-                new_chunk = tamper_chunk[:j] + [b] + padding_chunk
-                try_s = s[:i] + ''.join([chr(c) for c in new_chunk]) + s[i + block_size : i + block_size * 2]
+                new_chunk = tamper_chunk[:j] + chr(b) + padding_chunk
+                try_s = s[:i] + new_chunk + s[i + block_size : i + block_size * 2]
 
                 if check_cbc_padding(try_s, iv):
-                    intermediate_chunk = [b ^ padding_byte] + intermediate_chunk
+                    intermediate_chunk = chr(b ^ padding_byte) + intermediate_chunk
                     scan_from_byte = 0
                     #print "%d found: %s %s" % (j, new_chunk, intermediate_chunk)
                     #padding_chunk =  # must decrypt to 0x2, then [0x3,0x3], ... [padding_byte+1] * padding_byte
-                    padding_chunk = fixed_xor_bytes(intermediate_chunk, [padding_byte + 1] * padding_byte)
+                    padding_chunk = fixed_xor(intermediate_chunk, chr(padding_byte + 1) * padding_byte)
                     j -= 1
                     break
 
@@ -509,10 +509,10 @@ def defeat_cbc_padding_oracle(s, iv):
                     # the previous intermediate byte is wrong, go back and try again!
                     padding_byte -= 1
                     j += 1
-                    scan_from_byte = (intermediate_chunk[0] ^ padding_byte) + 1
+                    scan_from_byte = (ord(intermediate_chunk[0]) ^ padding_byte) + 1
                     intermediate_chunk = intermediate_chunk[1:]
                     padding_chunk = padding_chunk[1:]
                     #print "%d reset: %s %d %d" % (j-1, intermediate_chunk, padding_byte, scan_from_byte)
 
-        r = fixed_xor(s[i : i + block_size], ''.join([chr(b) for b in intermediate_chunk])) + r
+        r = fixed_xor(s[i : i + block_size], intermediate_chunk) + r
     return pkcs7_unpadding(r, block_size)
