@@ -11,11 +11,22 @@ data = [ "MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=",
          "MDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=",
          "MDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93" ]
 
-s = t.encrypt_random_cbc(data)
+iv = t.random_aes_key()
 
-assert t.check_cbc_padding(s), "oops"
+s = t.encrypt_random_cbc(data, iv)
 
-r = t.defeat_cbc_padding_oracle(s)
+assert t.check_cbc_padding(s, iv), "oops"
 
-print r
+r = t.defeat_cbc_padding_oracle(s, iv)
+
+print repr(r)
 print t.base64_to_str(r)
+
+out = []
+for d in data:
+    iv = t.random_aes_key()
+    s = t.encrypt_random_cbc([d], iv)
+    out.append(t.base64_to_str(t.defeat_cbc_padding_oracle(s, iv)))
+
+out.sort()
+print '\n'.join(out)
