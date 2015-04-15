@@ -10,7 +10,7 @@ r = [t.encrypt_aes_128_ctr(t.base64_to_str(d.replace('\r', '').replace('\n', '')
 
 s = t.defeat_fixed_nonce_ctr_stats(r)
 
-print s
+print '\n'.join(s)
 
 print len(s)
 
