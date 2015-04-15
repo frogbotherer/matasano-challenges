@@ -543,18 +543,27 @@ def defeat_cbc_padding_oracle(s, iv):
 
 def defeat_fixed_nonce_ctr(data):
     # why don't i just take the nth block of each and treat as 40 blocks of repeating key xor ? ...
+    # why don't i try to find the longest keystream in the set of data, then use that to decrypt all the messages ? ...
     block_size = 16
-    min_data_len = min([len(d) for d in data])
+    max_data_len = max([len(d) for d in data])
     r = ["" for i in range(len(data))]
-    for i in range(0, min_data_len, block_size):
+    keystream = ""
+    for i in range(0, max_data_len, block_size):
         nth_block_bytes = []
         for d in data:
-            nth_block_bytes.extend([ord(c) for c in d[i : i + block_size]])
+            block = d[i : i + block_size]
+            if len(block) < block_size:
+                # pad with nulls to end of block?!?
+                nth_block_bytes.extend([ord(c) for c in block] + [0 for b in range(block_size - len(block))]) 
+            else:
+                nth_block_bytes.extend([ord(c) for c in block])
 
         s = defeat_repeating_key_xor_bytes(nth_block_bytes, block_size)
         if s.has_key('decoded'):
             for j in range(0, len(s['decoded']), block_size):
                 r[j/block_size] += s['decoded'][j : j + block_size] 
-
+            if i >= len(keystream):
+                keystream += s['key']
+    print repr(keystream)
     return r
 

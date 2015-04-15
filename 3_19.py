@@ -51,4 +51,5 @@ s = t.defeat_fixed_nonce_ctr(r)
 
 print s
 
+print len(s)
 
