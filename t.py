@@ -250,8 +250,10 @@ def defeat_single_byte_xor_bytes(bytes):
              'score': max(guesses.keys()),
              'norm_score': max(guesses.keys())/len(guessed_bytes) }
 
-def defeat_repeating_key_xor(b64):
-    bytes = base64_to_bytes(b64)
+def defeat_repeating_key_xor(b64, fix_keysize=0):
+    return defeat_repeating_key_xor(base64_to_bytes(b64), fix_keysize)
+
+def defeat_repeating_key_xor_bytes(bytes, fix_keysize=0):
     KEYSIZE_MIN = 2
     KEYSIZE_MAX = 40
     KEYSIZE_BLOCKS = 4
@@ -260,23 +262,25 @@ def defeat_repeating_key_xor(b64):
     keysize_guesses = {}
     key_tries = []
 
-    for keysize in range(KEYSIZE_MIN, KEYSIZE_MAX):
-        distances = []
-        for i in range(0, keysize * KEYSIZE_BLOCKS, keysize):
-            distances.append(hamming_distance_bytes(bytes[i:i + keysize], bytes[i + keysize:i + keysize * 2]))
-        total_dist = sum(distances) / keysize
-        keysize_guesses.setdefault(total_dist, []).append(keysize)
+    if fix_keysize == 0:
+        for keysize in range(KEYSIZE_MIN, KEYSIZE_MAX):
+            distances = []
+            for i in range(0, keysize * KEYSIZE_BLOCKS, keysize):
+                distances.append(hamming_distance_bytes(bytes[i:i + keysize], bytes[i + keysize:i + keysize * 2]))
+            total_dist = sum(distances) / keysize
+            keysize_guesses.setdefault(total_dist, []).append(keysize)
 
-    # put top key sizes into key_tries array
-    ks = keysize_guesses.keys()
-    ks.sort()
-    for k in ks:
-        #print " -- %s: %s" %(k, keysize_guesses[k])
-        for s in keysize_guesses[k]:
-            key_tries.append(s)
-            if len(key_tries)>TRY_KEYS:
-                break
-
+        # put top key sizes into key_tries array
+        ks = keysize_guesses.keys()
+        ks.sort()
+        for k in ks:
+            #print " -- %s: %s" %(k, keysize_guesses[k])
+            for s in keysize_guesses[k]:
+                key_tries.append(s)
+                if len(key_tries)>TRY_KEYS:
+                    break
+    else:
+        key_tries = [fix_keysize]
     #print key_tries
 
     key = []
@@ -536,3 +540,21 @@ def defeat_cbc_padding_oracle(s, iv):
 
         r = fixed_xor(s[i : i + block_size], intermediate_chunk) + r
     return pkcs7_unpadding(r, block_size)
+
+def defeat_fixed_nonce_ctr(data):
+    # why don't i just take the nth block of each and treat as 40 blocks of repeating key xor ? ...
+    block_size = 16
+    min_data_len = min([len(d) for d in data])
+    r = ["" for i in range(len(data))]
+    for i in range(0, min_data_len, block_size):
+        nth_block_bytes = []
+        for d in data:
+            nth_block_bytes.extend([ord(c) for c in d[i : i + block_size]])
+
+        s = defeat_repeating_key_xor_bytes(nth_block_bytes, block_size)
+        if s.has_key('decoded'):
+            for j in range(0, len(s['decoded']), block_size):
+                r[j/block_size] += s['decoded'][j : j + block_size] 
+
+    return r
+
