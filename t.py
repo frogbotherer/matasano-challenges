@@ -204,46 +204,42 @@ def decrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
 def encrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
     return decrypt_aes_128_ctr(s, key, nonce)
 
-def defeat_single_byte_xor(hex):
-    return defeat_single_byte_xor_bytes(hex_to_bytes(hex))
+def defeat_single_byte_xor(hex, detecting=False):
+    return defeat_single_byte_xor_bytes(hex_to_bytes(hex), detecting)
 
-def defeat_single_byte_xor_bytes(bytes):
-    RD = "'XZYQKJVUWOLENIHDGFBTRPMCAS.zxjqkgbvpywfmculdrhsnioate " #"etaoinshrdlucmfwypvbgkqjxz"
+def defeat_single_byte_xor_bytes(bytes, detecting=False):
+    RD = "\n'XZYQKJVUWOLENIHDGFBTRPMCAS.zxjqkgbvpywfmculdrhsnioate " #"etaoinshrdlucmfwypvbgkqjxz"
     #RD = ".zxjqkgbvpywfmculdrhsnioate " #"etaoinshrdlucmfwypvbgkqjxz"
-    MIN_NORM_SCORE = 1500 # magic number to filter out credible-to-a-machine garbage
-
+    MIN_NORM_SCORE = 1000 # magic number to filter out credible-to-a-machine garbage
     guesses = {}
     for guess in range(256):
         key = [guess for g in range(len(bytes))]
         r = fixed_xor_bytes(bytes, key)
-        score = sum([((x < 0) and -100 or x*x) for x in [RD.find(chr(b)) for b in r]])
-
-        # get rid of low scoring garbage
-        if score/len(bytes) > MIN_NORM_SCORE:
-
-            # make sure all scores put in guesses hash
-            while guesses.has_key(score):
-                score += 1
-
-            guesses[score] = guess
-
-    best_guess = 0
-    guessed_bytes = []
-    while len(guesses.keys()) > 0:
-        best_guess = guesses[max(guesses.keys())]
-        guessed_bytes = fixed_xor_bytes(bytes, [best_guess for g in range(len(bytes))])
-        found_it = True
-
-        for b in guessed_bytes:
+        score = 0
+        for b in r:
             if not chr(b) in string.printable:
-                del guesses[max(guesses.keys())]
-                found_it = False
+                score = -1000000
                 break
-        
-        if found_it:
-            break
+            s = RD.find(chr(b))
+            if s == -1:
+                score -= 10000
+            else:
+               score += s * s
+        score /= len(bytes)
+
+        # make sure all scores put in guesses hash
+        while guesses.has_key(score):
+            score += 1
+
+        guesses[score] = guess
 
     assert len(guesses.keys()) > 0, "Failed to guess key"
+
+    if detecting and max(guesses.keys()) < MIN_NORM_SCORE:
+        raise ValueError, "Probably not valid single byte xor"
+
+    best_guess = guesses[max(guesses.keys())]
+    guessed_bytes = fixed_xor_bytes(bytes, [best_guess for g in range(len(bytes))])
 
     return { 'key': best_guess,
              'decoded': ''.join([chr(b) for b in guessed_bytes]),
@@ -294,9 +290,10 @@ def defeat_repeating_key_xor_bytes(bytes, fix_keysize=0):
         try:
             for block in trans_bytes:
                 key.append(defeat_single_byte_xor_bytes(block)['key'])
+                #print "OK %s" % block
             found_it = True
         except Exception, e:
-            pass #print "!! %s %s" % (block, e.message)
+            print "!! %s %s" % (block, e.message)
         if found_it: break
 
     if not found_it:
@@ -565,5 +562,18 @@ def defeat_fixed_nonce_ctr(data):
             if i >= len(keystream):
                 keystream += s['key']
     print repr(keystream)
+    print len(keystream)
+    return r
+
+def defeat_fixed_nonce_ctr_stats(data):
+    min_cipher_len = min([len(d) for d in data])
+    cipher_all = ""
+    for d in data:
+        cipher_all += d[:min_cipher_len]
+    s = defeat_repeating_key_xor_bytes([ord(c) for c in cipher_all], min_cipher_len)
+    r = []
+    for i in range(0, len(s['decoded']), min_cipher_len):
+        r.append(s['decoded'][i:i + min_cipher_len])
+
     return r
 
