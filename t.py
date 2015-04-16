@@ -204,6 +204,42 @@ def decrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
 def encrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
     return decrypt_aes_128_ctr(s, key, nonce)
 
+class MTRandom:
+    def __init__(self, seed=0):
+        self.__MT = [0 for i in range(624)]
+        self.__index = 0
+        self.initialise_generator(seed)
+
+    def initialise_generator(self, seed):
+        self.__index = 0
+        self.__MT[0] = seed
+        for i in range(1, 624):
+            self.__MT[i] = 0xFFFFFFFF & (0x6C078965 * (self.__MT[i - 1] ^ (self.__MT[i - 1] >> 30)) + i)
+
+    def extract_number(self):
+        if self.__index == 0:
+            self.generate_numbers()
+
+        y = self.__MT[self.__index]
+        y = y ^ (y >> 11)
+        y = y ^ ((y << 7) & 0x9D2C5680)
+        y = y ^ ((y << 15) & 0xEFC60000)
+        y = y ^ (y >> 18)
+
+        self.__index = (self.__index + 1) % 624
+
+        return y
+
+    def generate_numbers(self):
+        for i in range(624):
+            y = (self.__MT[i] & 0x80000000) + (self.__MT[(i + 1) % 624] & 0x7FFFFFFF)
+            self.__MT[i] = self.__MT[(i + 397) % 624] ^ (y >> 1)
+            if y % 2 != 0:
+                self.__MT[i] = self.__MT[i] ^ 0x9908B0DF
+
+    def random(self, base):
+        return int(base * self.extract_number() / (1 << 32))
+
 def defeat_single_byte_xor(hex, detecting=False):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex), detecting)
 
