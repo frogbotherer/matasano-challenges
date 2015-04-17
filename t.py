@@ -221,15 +221,17 @@ class MTRandom:
             self.generate_numbers()
 
         y = self.__MT[self.__index]
+        self.__index = (self.__index + 1) % 624
+
+        return self.__temper(y)
+
+    def __temper(self, y):
         y = y ^ (y >> 11)
         y = y ^ ((y << 7) & 0x9D2C5680)
         y = y ^ ((y << 15) & 0xEFC60000)
         y = y ^ (y >> 18)
-
-        self.__index = (self.__index + 1) % 624
-
         return y
-
+       
     def generate_numbers(self):
         for i in range(624):
             y = (self.__MT[i] & 0x80000000) + (self.__MT[(i + 1) % 624] & 0x7FFFFFFF)
@@ -239,6 +241,60 @@ class MTRandom:
 
     def random(self, base):
         return int(base * self.extract_number() / (1 << 32))
+
+class MTHack:
+
+    def __init__(self):
+        self.__MT = []
+        self.__index = 0
+
+    def untemper(self, y):
+        y = y ^ (y >> 18)
+
+        y = y ^ ((y << 15) & 0xEFC60000)
+
+        # temper:
+        #   84218421 84218421 84218421 84218421
+        #   00010010 00110100 01010110 01111000  # 0x12345678
+        #   00011010 00101011 00111100 0         # << 7
+        #   10011100 00101100 01010110 10000000  # 0x9D2C5680
+        #   00011000 00101000 00010100 0         # &
+        #   00001010 00011100 01000010 01111000  # xor (1)
+        #      0   a    1   c    4   2    7   8
+        # untemper:
+        #                               1111000  # these are same as before  # y
+        #                       010100 0         # << 7, & 0x9D2C5680
+        #                       010110 0         # ... and xor with (1)      # y1
+        #               01000 00                 # << 7 these & 0x9D2C5680
+        #               10100 01                 # ... and xor (1) again     # y2
+        #       1000 001                         # << 7, &
+        #       0010 001                         # ... xor
+        # ... ad infinitum
+        mask = 0x7f
+        r = y & mask
+        for i in range(7, 32, 7):
+            mask <<= 7
+            r |= ((0x9D2C5680 & (r << 7)) ^ y) & mask
+        y = r & 0xffffffff
+
+        # temper:
+        #   84218421 84218421 84218421 84218421
+        #   00010010 00110100 01010110 01111000  # 0x12345678
+        #               00010 01000110 10001010  # >> 11
+        #   00010010 00110110 00010000 11110010  # xor (1)
+        # untemper:
+        #   00010010 001                         # these are same as before  # y
+        #               00010 010001             # same bits >> 11
+        #               10110 000100             # ... and xor with (1)
+        #               10100 010101             # ... gives next 11 bits    # y1
+        #                           10 10001010  # these bits >> 11 again
+        #                           10 01111000  # ... xor with(1) again
+        #   00010010 00110100 01010110 01111000  # gives final result!
+        y1 = y ^ (y >> 11)
+        y = y ^ (y1 >> 11)
+
+        return y
+
 
 def defeat_single_byte_xor(hex, detecting=False):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex), detecting)
