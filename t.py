@@ -205,8 +205,30 @@ def decrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
 def encrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
     return decrypt_aes_128_ctr(s, key, nonce)
 
+def encrypt_16bit_prng(s, seed):
+    rng = MTRandom(seed & 0xFFFF)
+    ## i think this makes the problem impossible to solve because we're trashing 3/4 of the returned prn
+    ## ... and that means you can't untemper the prng output
+    #keystream = ''.join([chr(rng.extract_number() & 0xFF) for c in s])
+    keystream = ""
+    prn_bytes_remaining = 0
+    prn = 0
+    for c in s:
+        if prn_bytes_remaining == 0:
+            prn = rng.extract_number()
+            prn_bytes_remaining = 3
+        else:
+            prn = prn >> 8
+            prn_bytes_remaining -= 1
+        keystream += chr(prn & 0xFF)
+
+    return fixed_xor(s, keystream)
+
+def decrypt_16bit_prng(s, seed):
+    return encrypt_16bit_prng(s, seed) # lolz
+
 class MTRandom:
-    def __init__(self, seed=0):
+    def __init__(self, seed=int(time.time())):
         self.__MT = [0 for i in range(624)]
         self.__index = 0
         self.initialise_generator(seed)
@@ -246,6 +268,9 @@ class MTRandom:
     def set_state(self, MT):
         assert len(MT) == 624
         self.__MT = MT
+
+    def get_state(self):
+        return self.__MT
 
 class MTHack:
 
@@ -358,6 +383,25 @@ class MTHack:
 
         clone_rng.set_state(clone_MT)
         return clone_rng
+
+    def get_seed_from_16bit_prng(self, offset, nums):
+        untempered = [self.untemper(n) for n in nums]
+        call_count = offset + len(nums)
+
+        print "%d: %s %s" % (call_count, [hex(n) for n in nums], [hex(n) for n in untempered])
+        ## reverse this
+        #for i in range(624):
+        #    y = (self.__MT[i] & 0x80000000) + (self.__MT[(i + 1) % 624] & 0x7FFFFFFF)
+        #    self.__MT[i] = self.__MT[(i + 397) % 624] ^ (y >> 1)
+        #    if y % 2 != 0:
+        #        self.__MT[i] = self.__MT[i] ^ 0x9908B0DF
+
+        ## reverse this
+        #self.__MT[0] = seed
+        #for i in range(1, 624):
+        #    #self.__MT[i] = 0xFFFFFFFF & (0x6C078965 * (self.__MT[i - 1] ^ (self.__MT[i - 1] >> 30)) + i)
+        pass
+
 
 def defeat_single_byte_xor(hex, detecting=False):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex), detecting)
@@ -732,3 +776,27 @@ def defeat_fixed_nonce_ctr_stats(data):
 
     return r
 
+def defeat_16bit_prng_stream(s, predictable_s):
+    # s is encrypted, with predictable_s at the end of it
+    # assumptions:
+    #   * s is encrypted lsb first with all four bytes from MT in keystream
+    #   * MT prng started at index 0 with first byte
+    #   * MT prng has 16bit seed (other bits 0)
+    #   * number of encrypted bytes < 624
+    h = MTHack()
+
+    # work out how many calls to prng before s gets predictable
+    # (+1 because predictable_s might not start on a 32-bit boundary)
+    offset = (len(s) - len(predictable_s)) / 4 + 1
+
+    # work out prng output values
+    n = []
+    n_bytes = 3
+    for c in s[offset * 4:]:
+        if n_bytes == 3:
+            n.append(0)
+            n_bytes = 0
+        else:
+            n_bytes += 1
+        n[-1] |= ord(c) << (n_bytes * 8)
+    return h.get_seed_from_16bit_prng(offset, n)
