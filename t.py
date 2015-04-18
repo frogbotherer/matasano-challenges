@@ -2,6 +2,7 @@
 
 import string  # for printable
 import random  # for randint
+import time    # for time.time()
 from Crypto.Cipher import AES  # pip install PyCrypto
 
 def bytes_to_base64_array(bytes):
@@ -245,7 +246,7 @@ class MTRandom:
 class MTHack:
 
     def __init__(self):
-        self.__MT = []
+        self.__MT = [0 for i in range(624)]
         self.__index = 0
 
     def untemper(self, y):
@@ -295,6 +296,52 @@ class MTHack:
 
         return y
 
+    def ungenerate_numbers(self):
+        ## reverse this
+        #for i in range(624):
+        #    y = (self.__MT[i] & 0x80000000) + (self.__MT[(i + 1) % 624] & 0x7FFFFFFF)
+        #    self.__MT[i] = self.__MT[(i + 397) % 624] ^ (y >> 1)
+        #    if y % 2 != 0:
+        #        self.__MT[i] = self.__MT[i] ^ 0x9908B0DF
+        pass
+
+    def uninitialise(self):
+        ## reverse this
+        #self.__MT[0] = seed
+        #for i in range(1, 624):
+        #    self.__MT[i] = 0xFFFFFFFF & (0x6C078965 * (self.__MT[i - 1] ^ (self.__MT[i - 1] >> 30)) + i)
+        pass
+
+    def get_seed_from_recent_unix_timestamp(self, num, recent=2 * 60 * 60):
+        ## for 0th register, we need to reverse:
+        #self.__MT[0] = seed
+        #for i in range(1, 398):
+        #    self.__MT[i] = 0xFFFFFFFF & (0x6C078965 * (self.__MT[i - 1] ^ (self.__MT[i - 1] >> 30)) + i)
+        #y = (self.__MT[0] & 0x80000000) + (self.__MT[1] & 0x7FFFFFFF)
+        #self.__MT[0] = self.__MT[397] ^ (y >> 1)
+        #if y % 2 != 0:
+        #    self.__MT[0] = self.__MT[0] ^ 0x9908B0DF
+
+        ## some assumptions
+        ##  * recent == last 2 hours
+        ##  * seeded with 32bit seconds since epoch (i.e. int(time.time()))
+
+        ## approach:
+        ##  * untemper num
+        ##  * iterate through 2h-worth of timestamps until we get a match
+        untempered_num = self.untemper(num)
+        now = int(time.time())
+        for seed in range(now - recent, now):
+            self.__MT[0] = seed
+            for i in range(1, 398):
+                self.__MT[i] = 0xFFFFFFFF & (0x6C078965 * (self.__MT[i - 1] ^ (self.__MT[i - 1] >> 30)) + i)
+            y = (self.__MT[0] & 0x80000000) + (self.__MT[1] & 0x7FFFFFFF)
+            self.__MT[0] = self.__MT[397] ^ (y >> 1)
+            if y % 2 != 0:
+                self.__MT[0] = self.__MT[0] ^ 0x9908B0DF
+            if self.__MT[0] == untempered_num:
+                return seed
+        assert False, "couldn't calculate seed from %d in last %d seconds" % (num, recent)
 
 def defeat_single_byte_xor(hex, detecting=False):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex), detecting)
