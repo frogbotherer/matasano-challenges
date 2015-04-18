@@ -243,6 +243,10 @@ class MTRandom:
     def random(self, base):
         return int(base * self.extract_number() / (1 << 32))
 
+    def set_state(self, MT):
+        assert len(MT) == 624
+        self.__MT = MT
+
 class MTHack:
 
     def __init__(self):
@@ -342,6 +346,18 @@ class MTHack:
             if self.__MT[0] == untempered_num:
                 return seed
         assert False, "couldn't calculate seed from %d in last %d seconds" % (num, recent)
+
+    def clone(self, rng):
+        assert isinstance(rng, MTRandom), "can only clone MTRandom instances"
+
+        clone_rng = MTRandom()
+        clone_MT = []
+
+        for i in range(624):
+            clone_MT.append(self.untemper(rng.extract_number()))
+
+        clone_rng.set_state(clone_MT)
+        return clone_rng
 
 def defeat_single_byte_xor(hex, detecting=False):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex), detecting)
