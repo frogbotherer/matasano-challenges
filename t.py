@@ -6,20 +6,27 @@ import time    # for time.time()
 import sys     # for sys.stdout.flush/write
 from Crypto.Cipher import AES  # pip install PyCrypto
 
-def bytes_to_base64_array(bytes):
+def bytes_to_base64_array(bytes_in):
     r = []
+    bytes = [b for b in bytes_in]
+    while len(bytes) % 3 != 0:
+        bytes.append(0)
+
     for i in range(0, len(bytes), 3):
        # c is a 24bit representation of three input bytes
        c = 0
        for j in range(3):
           c += bytes[i + j] << (16 - 8 * j)
        for j in range(4):
-          r.append(0x3F & (c >> (18 - 6 * j)))
+          if i + j > len(bytes_in):
+              r.append(0x40)
+          else:
+              r.append(0x3F & (c >> (18 - 6 * j)))
     return r
 
 def base64_array_to_base64(b64_array):
     r = ""
-    D = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    D = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
     for c in b64_array:
 	r += D[c]
     return r
@@ -55,6 +62,7 @@ def base64_to_array(b64):
 
 def base64_array_to_bytes(b64_array):
     r = []
+    expected_len = int(len(b64_array) * 3 / 4)
     for i in range(0, len(b64_array), 4):
         c = 0
         for j in range(4):
@@ -62,6 +70,8 @@ def base64_array_to_bytes(b64_array):
                 break
             c |= b64_array[i + j] << (18 - j * 6)
         for j in range(3):
+            if len(r) >= expected_len:
+                break
             r.append((c >> (16 - 8 * j)) & 0xFF)
     return r
 
@@ -371,7 +381,7 @@ class MTHack:
                 self.__MT[0] = self.__MT[0] ^ 0x9908B0DF
             if self.__MT[0] == untempered_num:
                 return seed
-        assert False, "couldn't calculate seed from %d in last %d seconds" % (num, recent)
+        raise ValueError, "couldn't calculate seed from %d in last %d seconds" % (num, recent)
 
     def clone(self, rng):
         assert isinstance(rng, MTRandom), "can only clone MTRandom instances"
@@ -457,7 +467,7 @@ def defeat_single_byte_xor_bytes(bytes, detecting=False):
              'norm_score': max(guesses.keys())/len(guessed_bytes) }
 
 def defeat_repeating_key_xor(b64, fix_keysize=0):
-    return defeat_repeating_key_xor(base64_to_bytes(b64), fix_keysize)
+    return defeat_repeating_key_xor_bytes(base64_to_bytes(b64), fix_keysize)
 
 def defeat_repeating_key_xor_bytes(bytes, fix_keysize=0):
     KEYSIZE_MIN = 2
@@ -815,3 +825,26 @@ def defeat_16bit_prng_stream(s, predictable_s):
             n[-1] |= (c ^ p) << (j * 8)
 
     return h.get_seed_from_16bit_prng(offset / 4, n)
+
+def random_password_token():
+    rng = MTRandom(int(time.time()))
+    c = rng.extract_number()
+    b = []
+    for i in range(4):
+        b.append((c >> (i * 8)) & 0xFF)
+    return bytes_to_base64(b)
+
+def is_random_password_token(token):
+    h = MTHack()
+    b = base64_to_bytes(token)
+    print [hex(a) for a in b]
+    assert len(b) == 4
+    c = 0
+    for i in range(len(b)):
+        c |= b[i] << ((len(b) - i - 1) * 8)
+    print hex(c)
+    try:
+        seed = h.get_seed_from_recent_unix_timestamp(c)
+        return True
+    except ValueError, e:
+        return False

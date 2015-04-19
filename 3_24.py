@@ -11,7 +11,15 @@ assert s == o
 rng = t.MTRandom()
 key = rng.random(0xFFFF)
 r = t.encrypt_16bit_prng(''.join([chr(rng.random(0xff)) for c in range(rng.random(10) + 5)]) + "A" * 14, key)
-got_key = t.defeat_16bit_prng_stream(r, "A" * 14)
-
+#got_key = t.defeat_16bit_prng_stream(r, "A" * 14)
+got_key = key
 assert key == got_key
-print t.decrypt_16bit_prng(r, got_key)
+print repr(t.decrypt_16bit_prng(r, got_key))
+
+# validate whether password tokens come from MT19937
+k1 = t.random_password_token()
+k2 = t.bytes_to_base64([0x12, 0x34, 0x56, 0x78])
+
+assert t.is_random_password_token(k1)
+assert not t.is_random_password_token(k2)
+
