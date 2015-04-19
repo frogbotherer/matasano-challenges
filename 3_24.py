@@ -11,6 +11,7 @@ assert s == o
 rng = t.MTRandom()
 key = rng.random(0xFFFF)
 r = t.encrypt_16bit_prng(''.join([chr(rng.random(0xff)) for c in range(rng.random(10) + 5)]) + "A" * 14, key)
-
 got_key = t.defeat_16bit_prng_stream(r, "A" * 14)
 
+assert key == got_key
+print t.decrypt_16bit_prng(r, got_key)

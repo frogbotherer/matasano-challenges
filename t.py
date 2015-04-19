@@ -3,6 +3,7 @@
 import string  # for printable
 import random  # for randint
 import time    # for time.time()
+import sys     # for sys.stdout.flush/write
 from Crypto.Cipher import AES  # pip install PyCrypto
 
 def bytes_to_base64_array(bytes):
@@ -387,20 +388,30 @@ class MTHack:
     def get_seed_from_16bit_prng(self, offset, nums):
         untempered = [self.untemper(n) for n in nums]
         call_count = offset + len(nums)
+        assert call_count < 624, "didn't code for registers wrapping"
 
-        print "%d: %s %s" % (call_count, [hex(n) for n in nums], [hex(n) for n in untempered])
-        ## reverse this
-        #for i in range(624):
-        #    y = (self.__MT[i] & 0x80000000) + (self.__MT[(i + 1) % 624] & 0x7FFFFFFF)
-        #    self.__MT[i] = self.__MT[(i + 397) % 624] ^ (y >> 1)
-        #    if y % 2 != 0:
-        #        self.__MT[i] = self.__MT[i] ^ 0x9908B0DF
+        # brute force seed, calculating as little as possible to keep loop tight
+        for seed in range(1 << 16):
+            if seed % (1 << 10) == 0:
+                sys.stdout.write("%d%%\r" % int(seed * 100 / (1 << 16)))
+                sys.stdout.flush()
 
-        ## reverse this
-        #self.__MT[0] = seed
-        #for i in range(1, 624):
-        #    #self.__MT[i] = 0xFFFFFFFF & (0x6C078965 * (self.__MT[i - 1] ^ (self.__MT[i - 1] >> 30)) + i)
-        pass
+            self.__MT[0] = seed
+            for i in range(1, 397 + call_count):
+                self.__MT[i] = 0xFFFFFFFF & (0x6C078965 * (self.__MT[i - 1] ^ (self.__MT[i - 1] >> 30)) + i)
+
+            for i in range(call_count):
+                y = (self.__MT[i] & 0x80000000) + (self.__MT[i + 1] & 0x7FFFFFFF)
+                self.__MT[i] = self.__MT[(i + 397) % 624] ^ (y >> 1)
+                if y % 2 != 0:
+                    self.__MT[i] = self.__MT[i] ^ 0x9908B0DF
+
+            if untempered == self.__MT[offset:call_count]:
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                return seed
+
+        assert False, "couldn't find seed for %s, offset %d" % ([hex(n) for n in nums], offset)
 
 
 def defeat_single_byte_xor(hex, detecting=False):
@@ -786,17 +797,21 @@ def defeat_16bit_prng_stream(s, predictable_s):
     h = MTHack()
 
     # work out how many calls to prng before s gets predictable
-    # (+1 because predictable_s might not start on a 32-bit boundary)
-    offset = (len(s) - len(predictable_s)) / 4 + 1
-
+    # figure out how many bytes of encrypted string to skip *and* how many bytes of
+    # the predictable string to skip because they weren't aligned to a 32-bit boundary
+    offset = len(s) - len(predictable_s)
+    offset_predictable = 4 - (offset % 4)
+    offset += offset_predictable
     # work out prng output values
     n = []
-    n_bytes = 3
-    for c in s[offset * 4:]:
-        if n_bytes == 3:
-            n.append(0)
-            n_bytes = 0
-        else:
-            n_bytes += 1
-        n[-1] |= ord(c) << (n_bytes * 8)
-    return h.get_seed_from_16bit_prng(offset, n)
+    for i in range(0, len(predictable_s) - offset_predictable, 4):
+        # i.e. start at the 32-bit boundary and increment in 4 byte words
+        if i + 4 > len(predictable_s) - offset_predictable:
+            break
+        n.append(0)
+        for j in range(4):
+            c = ord(s[offset + i + j])
+            p = ord(predictable_s[i + j])
+            n[-1] |= (c ^ p) << (j * 8)
+
+    return h.get_seed_from_16bit_prng(offset / 4, n)
