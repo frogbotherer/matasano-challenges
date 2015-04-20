@@ -364,13 +364,14 @@ class MTHack:
 
         ## some assumptions
         ##  * recent == last 2 hours
+        ##  * clock on prng host might be out by a few seconds
         ##  * seeded with 32bit seconds since epoch (i.e. int(time.time()))
 
         ## approach:
         ##  * untemper num
         ##  * iterate through 2h-worth of timestamps until we get a match
         untempered_num = self.untemper(num)
-        now = int(time.time())
+        now = int(time.time()) + 60  # out by up to a minute
         for seed in range(now - recent, now):
             self.__MT[0] = seed
             for i in range(1, 398):
@@ -831,18 +832,18 @@ def random_password_token():
     c = rng.extract_number()
     b = []
     for i in range(4):
-        b.append((c >> (i * 8)) & 0xFF)
+        b.append((c >> ((3 - i) * 8)) & 0xFF)
+
     return bytes_to_base64(b)
 
 def is_random_password_token(token):
     h = MTHack()
     b = base64_to_bytes(token)
-    print [hex(a) for a in b]
     assert len(b) == 4
     c = 0
     for i in range(len(b)):
         c |= b[i] << ((len(b) - i - 1) * 8)
-    print hex(c)
+
     try:
         seed = h.get_seed_from_recent_unix_timestamp(c)
         return True
