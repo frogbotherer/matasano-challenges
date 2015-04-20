@@ -437,24 +437,29 @@ def defeat_single_byte_xor_bytes(bytes, detecting=False):
         key = [guess for g in range(len(bytes))]
         r = fixed_xor_bytes(bytes, key)
         score = 0
+        is_printable = True
         for b in r:
             if not chr(b) in string.printable:
                 score = -1000000
+                is_printable = False
                 break
             s = RD.find(chr(b))
             if s == -1:
                 score -= 10000
             else:
                score += s * s
-        score /= len(bytes)
 
-        # make sure all scores put in guesses hash
-        while guesses.has_key(score):
-            score += 1
+        if is_printable:
+            score /= len(bytes)
 
-        guesses[score] = guess
+            # make sure all scores put in guesses hash
+            while guesses.has_key(score):
+                score += 1
 
-    assert len(guesses.keys()) > 0, "Failed to guess key"
+            guesses[score] = guess
+
+    if len(guesses.keys()) == 0:
+        raise ValueError, "No good guesses for key"
 
     if detecting and max(guesses.keys()) < MIN_NORM_SCORE:
         raise ValueError, "Probably not valid single byte xor"
@@ -491,14 +496,12 @@ def defeat_repeating_key_xor_bytes(bytes, fix_keysize=0):
         ks = keysize_guesses.keys()
         ks.sort()
         for k in ks:
-            #print " -- %s: %s" %(k, keysize_guesses[k])
             for s in keysize_guesses[k]:
                 key_tries.append(s)
                 if len(key_tries)>TRY_KEYS:
                     break
     else:
         key_tries = [fix_keysize]
-    #print key_tries
 
     key = []
     found_it = False
@@ -513,8 +516,8 @@ def defeat_repeating_key_xor_bytes(bytes, fix_keysize=0):
                 key.append(defeat_single_byte_xor_bytes(block)['key'])
                 #print "OK %s" % block
             found_it = True
-        except Exception, e:
-            print "!! %s %s" % (block, e.message)
+        except ValueError, e:
+            pass #print "!! %s %s" % (block, e.message)
         if found_it: break
 
     if not found_it:
