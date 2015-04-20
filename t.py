@@ -196,11 +196,11 @@ def encrypt_aes_128_cbc(s, key, iv):
         r += encrypted
     return r
 
-def decrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
+def decrypt_aes_128_ctr(s, key, nonce=chr(0) * 8, offset=0):
     block_size = 16
     r = ""
     for i in range(0, len(s), block_size):
-        ctr = int(i / block_size)
+        ctr = int(i / block_size) + offset
         ctr_li = ""
         for b in range(0, 64, 8):
             ctr_li += chr(0xff & (ctr >> b))
@@ -213,8 +213,24 @@ def decrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
             r += fixed_xor(s[i : i + block_size], keystream)
     return r
 
-def encrypt_aes_128_ctr(s, key, nonce=chr(0) * 8):
-    return decrypt_aes_128_ctr(s, key, nonce)
+def encrypt_aes_128_ctr(s, key, nonce=chr(0) * 8, offset=0):
+    return decrypt_aes_128_ctr(s, key, nonce, offset)
+
+def edit_ctr_stream(ciphertext, offset, newtext, key, nonce=chr(0) * 8):
+    block_size = 16
+    first_block_start = int(offset / block_size) * block_size
+    first_block_offset = offset % block_size
+    last_block_start = int((offset + len(newtext)) / block_size) * block_size
+    last_block_end = block_size - (offset + len(newtext)) % block_size
+
+    decrypted_orig = decrypt_aes_128_ctr(ciphertext[first_block_start : last_block_start + block_size], key, nonce, first_block_start / block_size)
+    decrypted = decrypted_orig[:first_block_offset] + newtext
+    if last_block_end < block_size and last_block_start + block_size < len(ciphertext):
+        # don't add the same block again if it ends on a boundary; don't forget CTR doesn't align to block size
+        decrypted += decrypted_orig[-1 * last_block_end:]
+    encrypted = encrypt_aes_128_ctr(decrypted, key, nonce, first_block_start / block_size)
+
+    return ciphertext[:first_block_start] + encrypted + ciphertext[last_block_start + block_size:]
 
 def encrypt_16bit_prng(s, seed):
     rng = MTRandom(seed & 0xFFFF)
@@ -852,3 +868,15 @@ def is_random_password_token(token):
         return True
     except ValueError, e:
         return False
+
+class CTRVictim:
+    def __init__(self, s, key, nonce=chr(0) * 8):
+        self.__key = key
+        self.__nonce = nonce
+        self.__ciphertext = encrypt_aes_128_ctr(s, key, nonce)
+
+    def get_ciphertext(self):
+        return self.__ciphertext
+
+    def edit(self, offset, text):
+        self.__ciphertext = edit_ctr_stream(self.__ciphertext, offset, text, self.__key, self.__nonce)
