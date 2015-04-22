@@ -181,6 +181,9 @@ def decrypt_aes_128_cbc(s, key, iv, use_strict_pkcs7=False):
             decrypted = pkcs7_unpadding(decrypted, 16)
         last_block = block
         r += decrypted
+    for c in r:
+        if not c in string.printable:
+            raise ValueError, "'%s' contains non-printable character" % r
     return r
 
 def encrypt_aes_128_cbc(s, key, iv):
@@ -683,11 +686,14 @@ def ecb_mitm(s, oracle):
 
 CBC_ORACLE_KEY = random_aes_key()
 CBC_ORACLE_IV = random_aes_key()
-def cbc_oracle(userdata):
+def cbc_oracle(userdata, key_is_iv=False):
+    for c in userdata:
+        if not c in string.printable:
+            raise ValueError, "'%s' contains invalid character(s)"
     s = "comment1=cooking%20MCs;userdata=" \
         + userdata.replace(';', '%3b').replace('=', '%3d') \
         + ";comment2=%20like%20a%20pound%20of%20bacon"
-    return encrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV)
+    return encrypt_aes_128_cbc(s, CBC_ORACLE_KEY, key_is_iv and CBC_ORACLE_KEY or CBC_ORACLE_IV)
 
 def ctr_oracle(userdata):
     s = "comment1=cooking%20MCs;userdata=" \
@@ -706,8 +712,8 @@ def check_cbc_padding(s, iv):
         return False
     return True
 
-def is_admin(s):
-    decrypted = decrypt_aes_128_cbc(s, CBC_ORACLE_KEY, CBC_ORACLE_IV)
+def is_admin(s, key_is_iv=False):
+    decrypted = decrypt_aes_128_cbc(s, CBC_ORACLE_KEY, key_is_iv and CBC_ORACLE_KEY or CBC_ORACLE_IV)
     return "admin=true" in decrypted.split(';')
 
 def is_admin_ctr(s):
@@ -768,7 +774,7 @@ def defeat_cbc_bitflip():
     # supply a block of sacrificial As
     # supply a block containing :admin<true (i.e. LSBs flipped from ; and =)
     # send to oracle
-    s = oracle(first_block_end + ("A" * block_size) + ":admin<true")
+    s = cbc_oracle(first_block_end + ("A" * block_size) + ":admin<true")
 
     # flip LSB in bytes 1 and 7 of sacrificial block
     s = s[:prefix_offset] \
@@ -818,6 +824,26 @@ def defeat_cbc_padding_oracle(s, iv):
 
         r = fixed_xor(s[i : i + block_size], intermediate_chunk) + r
     return pkcs7_unpadding(r, block_size)
+
+def defeat_cbc_with_iv_eq_key():
+    # attacker
+    c1c2c3 = cbc_oracle("A" * (16 * 3), True)
+    c1x0c1 = c1c2c3[:16] + (chr(0) * 16) + c1c2c3[:16]
+
+    # receiver
+    decrypted = ""
+    try:
+        decrypted = decrypt_aes_128_cbc(c1x0c1, CBC_ORACLE_KEY, CBC_ORACLE_KEY)
+    except ValueError, e:
+        decrypted = e.message[1:49]
+
+    # attacker
+    key = fixed_xor(decrypted[:16], decrypted[32:48])
+
+    print "%s == %s ?" % (repr(key), repr(CBC_ORACLE_KEY))
+    print decrypt_aes_128_cbc(c1c2c3, key, key)
+
+    assert key == CBC_ORACLE_KEY
 
 def defeat_fixed_nonce_ctr(data):
     # why don't i just take the nth block of each and treat as 40 blocks of repeating key xor ? ...
