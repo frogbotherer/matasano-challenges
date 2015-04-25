@@ -84,6 +84,83 @@ def base64_to_hex(b64):
 def base64_to_str(b64):
     return ''.join([chr(b) for b in base64_to_bytes(b64)])
 
+def left_rotate(num, bits):
+    return ((num << bits) | (num >> (32 - bits))) & 0xffffffff
+
+def sha1(s):
+    # http://en.wikipedia.org/wiki/SHA-1
+    # constants
+    h0 = 0x67452301
+    h1 = 0xEFCDAB89
+    h2 = 0x98BADCFE
+    h3 = 0x10325476
+    h4 = 0xC3D2E1F0
+
+    # ml = message length in bits (always a multiple of the number of bits in a character).
+    m1 = len(s) * 8
+
+    # pre-processing
+    s += chr(0x80) + chr(0x0) * ((440 - (m1 % 440)) / 8)
+    for i in range(7, -1, -1):
+        s += chr((m1 >> (i * 8)) & 0xFF)
+
+    # Process the message in successive 512-bit chunks:
+    for chunk_i in range(0, len(s), 64): # 512 bits == 64 bytes
+        chunk = s[chunk_i : chunk_i + 64]
+        w = [0 for i in range(80)]
+
+        for i in range(0, len(chunk), 4):
+            w[i / 4] = ord(chunk[i]) << 24 \
+                     | ord(chunk[i + 1]) << 16 \
+                     | ord(chunk[i + 2]) << 8 \
+                     | ord(chunk[i + 3])
+
+        # Extend the sixteen 32-bit words into eighty 32-bit words:
+        for i in range(16, 80):
+            w[i] = left_rotate(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1)
+
+        # Initialize hash value for this chunk:
+        a = h0
+        b = h1
+        c = h2
+        d = h3
+        e = h4
+
+        f = 0
+        k = 0x0
+
+        # Main loop:
+        for i in range(80):
+            if i in range(20):
+                f = (b & c) | ((~b) & d)
+                k = 0x5A827999
+            elif i in range(20, 40):
+                f = b ^ c ^ d
+                k = 0x6ED9EBA1
+            elif i in range(40, 60):
+                f = (b & c) | (b & d) | (c & d) 
+                k = 0x8F1BBCDC
+            elif i in range(60, 80):
+                f = b ^ c ^ d
+                k = 0xCA62C1D6
+
+            temp = (left_rotate(a, 5) + f + e + k + w[i]) & 0xFFFFFFFF
+            e = d
+            d = c
+            c = left_rotate(b, 30)
+            b = a
+            a = temp
+
+        # Add this chunk's hash to result so far:
+        h0 = (h0 + a) & 0xFFFFFFFF
+        h1 = (h1 + b) & 0xFFFFFFFF
+        h2 = (h2 + c) & 0xFFFFFFFF
+        h3 = (h3 + d) & 0xFFFFFFFF
+        h4 = (h4 + e) & 0xFFFFFFFF
+
+    # Produce the final hash value (big-endian) as a 160 bit number:
+    return (h0 << 128) | (h1 << 96) | (h2 << 64) | (h3 << 32) | h4
+
 def encrypt_aes_128_ecb(s, key):
     o = AES.new(key, AES.MODE_ECB)
     if len(s) % 16 != 0:
@@ -256,6 +333,12 @@ def encrypt_16bit_prng(s, seed):
 
 def decrypt_16bit_prng(s, seed):
     return encrypt_16bit_prng(s, seed) # lolz
+
+def sha1_sign(message, key):
+    return sha1(key + message)
+
+def sha1_check_sign(message, key, hash):
+    return sha1_sign(message, key) == hash
 
 class MTRandom:
     def __init__(self, seed=int(time.time())):
