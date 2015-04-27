@@ -114,8 +114,6 @@ def sha1(s, ra=0x67452301, rb=0xEFCDAB89, rc=0x98BADCFE, rd=0x10325476, re=0xC3D
     # pre-processing
     s += md_padding(s, length)
 
-    print "pre sha1 message: %s" % repr(s)
-
     # Process the message in successive 512-bit chunks:
     for chunk_i in range(0, len(s), 64): # 512 bits == 64 bytes
         chunk = s[chunk_i : chunk_i + 64]
@@ -1043,18 +1041,20 @@ class CTRVictim:
     def edit(self, offset, text):
         self.__ciphertext = edit_ctr_stream(self.__ciphertext, offset, text, self.__key, self.__nonce)
 
-def defeat_sha1_signing(message, signature, new_message_suffix):
+def defeat_sha1_signing(message, signature, new_message_suffix, sign_callback=lambda a,b: True):
+    MAX_PASSWORD_LEN = 40
     regs = []
     s = signature
     for i in range(5):
         regs.insert(0, s & 0xFFFFFFFF)
         s = s >> 32
 
-    password_len = 16
+    for password_len in range(MAX_PASSWORD_LEN):
+        forged_message = message + md_padding("A" * password_len + message, len(message) + password_len) + new_message_suffix
+        new_sign = sha1(new_message_suffix, regs[0], regs[1], regs[2], regs[3], regs[4], len(forged_message) + password_len)
 
-    print "*" * 80
-    forged_message = message + md_padding("A" * password_len + message, len(message) + password_len) + new_message_suffix
-    new_sign = sha1(new_message_suffix, regs[0], regs[1], regs[2], regs[3], regs[4], len(forged_message) + password_len)
-    print "*" * 80
+        if sign_callback(forged_message, new_sign):
+            return {'new_sig': new_sign, 'new_message': forged_message, 'password_len': password_len}
 
-    return (new_sign, forged_message)
+    assert False, "couldn't guess password length"
+    return {}
