@@ -87,22 +87,34 @@ def base64_to_str(b64):
 def left_rotate(num, bits):
     return ((num << bits) | (num >> (32 - bits))) & 0xffffffff
 
-def sha1(s):
-    # http://en.wikipedia.org/wiki/SHA-1
-    # constants
-    h0 = 0x67452301
-    h1 = 0xEFCDAB89
-    h2 = 0x98BADCFE
-    h3 = 0x10325476
-    h4 = 0xC3D2E1F0
+def md_padding(message, length=None):
+    if length is None:
+        length = len(message)
 
     # ml = message length in bits (always a multiple of the number of bits in a character).
-    m1 = len(s) * 8
+    m1 = len(message) * 8
+    reported_m1 = length * 8
 
     # pre-processing
-    s += chr(0x80) + chr(0x0) * ((440 - (m1 % 440)) / 8)
+    r = chr(0x80) + chr(0x0) * ((440 - (m1 % 512)) / 8)
     for i in range(7, -1, -1):
-        s += chr((m1 >> (i * 8)) & 0xFF)
+        r += chr((reported_m1 >> (i * 8)) & 0xFF)
+
+    return r
+
+def sha1(s, ra=0x67452301, rb=0xEFCDAB89, rc=0x98BADCFE, rd=0x10325476, re=0xC3D2E1F0, length=None):
+    # http://en.wikipedia.org/wiki/SHA-1
+    # constants
+    h0 = ra
+    h1 = rb
+    h2 = rc
+    h3 = rd
+    h4 = re
+
+    # pre-processing
+    s += md_padding(s, length)
+
+    print "pre sha1 message: %s" % repr(s)
 
     # Process the message in successive 512-bit chunks:
     for chunk_i in range(0, len(s), 64): # 512 bits == 64 bytes
@@ -1030,3 +1042,19 @@ class CTRVictim:
 
     def edit(self, offset, text):
         self.__ciphertext = edit_ctr_stream(self.__ciphertext, offset, text, self.__key, self.__nonce)
+
+def defeat_sha1_signing(message, signature, new_message_suffix):
+    regs = []
+    s = signature
+    for i in range(5):
+        regs.insert(0, s & 0xFFFFFFFF)
+        s = s >> 32
+
+    password_len = 16
+
+    print "*" * 80
+    forged_message = message + md_padding("A" * password_len + message, len(message) + password_len) + new_message_suffix
+    new_sign = sha1(new_message_suffix, regs[0], regs[1], regs[2], regs[3], regs[4], len(forged_message) + password_len)
+    print "*" * 80
+
+    return (new_sign, forged_message)
