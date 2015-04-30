@@ -102,6 +102,17 @@ def md_padding(message, length=None):
 
     return r
 
+def md4(s, ra=0x01234567, rb=0x89abcdef, rc=0xfedcba98, rd=76543210, length=None):
+    # pre-processing (steps 1., 2.)
+    s += md_padding(s, length)
+
+    # initialise MD buffer (step 3.)
+    a = ra
+    b = rb
+    c = rc
+    d = rd
+
+
 def sha1(s, ra=0x67452301, rb=0xEFCDAB89, rc=0x98BADCFE, rd=0x10325476, re=0xC3D2E1F0, length=None):
     # http://en.wikipedia.org/wiki/SHA-1
     # constants
