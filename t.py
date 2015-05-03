@@ -85,7 +85,7 @@ def base64_to_str(b64):
     return ''.join([chr(b) for b in base64_to_bytes(b64)])
 
 def left_rotate(num, bits):
-    return ((num << bits) | (num >> (32 - bits))) & 0xffffffff
+    return ((num << bits) | ((num & 0xffffffff) >> (32 - bits))) & 0xffffffff
 
 def md_padding(message, length=None):
     if length is None:
@@ -97,21 +97,124 @@ def md_padding(message, length=None):
 
     # pre-processing
     r = chr(0x80) + chr(0x0) * ((440 - (m1 % 512)) / 8)
+    if r == chr(0x80):  # i.e. m1 % 512 >= 440
+        # pad to end of block and then to next minus 8 bytes
+        r += chr(0x0) * ((512 - (m1 % 512) + 440) / 8)
     for i in range(7, -1, -1):
         r += chr((reported_m1 >> (i * 8)) & 0xFF)
 
     return r
 
-def md4(s, ra=0x01234567, rb=0x89abcdef, rc=0xfedcba98, rd=76543210, length=None):
+def md_padding_le(message, length=None):
+    if length is None:
+        length = len(message)
+
+    # ml = message length in bits (always a multiple of the number of bits in a character).
+    m1 = len(message) * 8
+    reported_m1 = length * 8
+
+    # pre-processing
+    r = chr(0x80) + chr(0x0) * ((440 - (m1 % 512)) / 8)
+    if r == chr(0x80):  # i.e. m1 % 512 >= 440
+        # pad to end of block and then to next minus 8 bytes
+        r += chr(0x0) * ((512 - (m1 % 512) + 440) / 8)
+    for i in range(8):
+        r += chr((reported_m1 >> (i * 8)) & 0xFF)
+
+    return r
+
+def md4(s, ra=0x67452301, rb=0xefcdab89, rc=0x98badcfe, rd=0x10325476, length=None):
     # pre-processing (steps 1., 2.)
-    s += md_padding(s, length)
+    s += md_padding_le(s, length)
 
     # initialise MD buffer (step 3.)
-    a = ra
-    b = rb
-    c = rc
-    d = rd
+    A = ra
+    B = rb
+    C = rc
+    D = rd
 
+    # process message in 16-word blocks (step 4.)
+    F = lambda X, Y, Z: (X & Y) | ((~X) & Z)
+    G = lambda X, Y, Z: (X & Y) | (X & Z) | (Y & Z)
+    H = lambda X, Y, Z: X ^ Y ^ Z
+
+    for block_i in range(0, len(s), 64):
+        block = s[block_i : block_i + 64]
+        X = [0 for i in range(16)]
+        for i in range(0, len(block), 4):
+            X[i / 4] = ord(block[i]) \
+                     | ord(block[i + 1]) << 8 \
+                     | ord(block[i + 2]) << 16 \
+                     | ord(block[i + 3]) << 24
+        AA = A
+        BB = B
+        CC = C
+        DD = D
+
+        # round 1.
+        for i in range(16):
+            k = i
+            # a = (a + F(b,c,d) + X[k]) <<< s
+            if i % 4 == 0:
+                # ABCD i 3
+                A = left_rotate(A + F(B, C, D) + X[k], 3)
+            elif i % 4 == 1:
+                # DABC i 7
+                D = left_rotate(D + F(A, B, C) + X[k], 7)
+            elif i % 4 == 2:
+                # CDAB i 11
+                C = left_rotate(C + F(D, A, B) + X[k], 11)
+            else: # i % 4 == 3
+                # BCDA i 19
+                B = left_rotate(B + F(C, D, A) + X[k], 19)
+
+        # round 2.
+        for i in range(16):
+            k = (0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15)[i]
+            # a = (a + G(b,c,d) + X[k] + 5A827999) <<< s
+            if i % 4 == 0:
+                # ABCD i 3
+                A = left_rotate(A + G(B, C, D) + X[k] + 0x5A827999, 3)
+            elif i % 4 == 1:
+                # DABC i 5
+                D = left_rotate(D + G(A, B, C) + X[k] + 0x5A827999, 5)
+            elif i % 4 == 2:
+                # CDAB i 9
+                C = left_rotate(C + G(D, A, B) + X[k] + 0x5A827999, 9)
+            else: # i % 4 == 3
+                # BCDA i 13
+                B = left_rotate(B + G(C, D, A) + X[k] + 0x5A827999, 13)
+
+        # round 3.
+        for i in range(16):
+            k = (0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15)[i]
+            # a = (a + H(b,c,d) + X[k] + 6ED9EBA1) <<< s
+            if i % 4 == 0:
+                # ABCD i 3
+                A = left_rotate(A + H(B, C, D) + X[k] + 0x6ED9EBA1, 3)
+            elif i % 4 == 1:
+                # DABC i 9
+                D = left_rotate(D + H(A, B, C) + X[k] + 0x6ED9EBA1, 9)
+            elif i % 4 == 2:
+                # CDAB i 11
+                C = left_rotate(C + H(D, A, B) + X[k] + 0x6ED9EBA1, 11)
+            else: # i % 4 == 3
+                # BCDA i 15
+                B = left_rotate(B + H(C, D, A) + X[k] + 0x6ED9EBA1, 15)
+
+        A += AA
+        B += BB
+        C += CC
+        D += DD
+
+    # convert big-endian to little-endian
+    be = (A & 0xFFFFFFFF) | ((B & 0xFFFFFFFF) << 32) | ((C & 0xFFFFFFFF) << 64) | ((D & 0xFFFFFFFF) << 96)
+    le = 0
+    for i in range(16):
+        byte = (be >> (i * 8)) & 0xFF
+        le |= byte << ((15 - i) * 8)
+
+    return le
 
 def sha1(s, ra=0x67452301, rb=0xEFCDAB89, rc=0x98BADCFE, rd=0x10325476, re=0xC3D2E1F0, length=None):
     # http://en.wikipedia.org/wiki/SHA-1
@@ -354,6 +457,12 @@ def encrypt_16bit_prng(s, seed):
 
 def decrypt_16bit_prng(s, seed):
     return encrypt_16bit_prng(s, seed) # lolz
+
+def md4_sign(message, key):
+    return md4(key + message)
+
+def md4_check_sign(message, key, hash):
+    return md4_sign(message, key) == hash
 
 def sha1_sign(message, key):
     return sha1(key + message)
@@ -1051,6 +1160,30 @@ class CTRVictim:
 
     def edit(self, offset, text):
         self.__ciphertext = edit_ctr_stream(self.__ciphertext, offset, text, self.__key, self.__nonce)
+
+def defeat_md4_signing(message, signature, new_message_suffix, sign_callback=lambda a,b: True):
+    MAX_PASSWORD_LEN = 40
+    regs = []
+    s = signature
+    print hex(s)
+    for i in range(4):
+        reg_le = 0
+        for i in range(4):
+            byte = (s >> (i * 8)) & 0xFF
+            reg_le |= byte << ((3 - i) * 8)
+
+        regs.insert(0, reg_le)
+        s = s >> 32
+
+    for password_len in range(MAX_PASSWORD_LEN):
+        forged_message = message + md_padding_le("A" * password_len + message, len(message) + password_len) + new_message_suffix
+        new_sign = md4(new_message_suffix, regs[0], regs[1], regs[2], regs[3], len(forged_message) + password_len)
+
+        if sign_callback(forged_message, new_sign):
+            return {'new_sig': new_sign, 'new_message': forged_message, 'password_len': password_len}
+
+    assert False, "couldn't guess password length"
+    return {}
 
 def defeat_sha1_signing(message, signature, new_message_suffix, sign_callback=lambda a,b: True):
     MAX_PASSWORD_LEN = 40
