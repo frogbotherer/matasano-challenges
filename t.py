@@ -691,20 +691,22 @@ def insecure_compare(s1, s2, delay=50):
     for i in range(len(s1)):
         if s1[i] != s2[i]:
             return False
-        time.sleep(delay / 1000)
+        time.sleep(delay / 1000.0)
     return True
 
+FILE_APP_KEY = random_aes_key()
 class FileApp:
     def __init__(self):
-        self.hmac_key = "test" #random_aes_key()
+        self.hmac_key = FILE_APP_KEY
 
     def GET(self):
         data = web.input()
         real_hmac = ""
         with open(data.file, 'r') as FILE:
             real_hmac = "%x" % hmac(FILE.read(), self.hmac_key)
-        if not insecure_compare(real_hmac, data.signature):
+        if not insecure_compare(real_hmac, data.signature, 20):
             raise web.HTTPError("500 internal error: signature mismatch")
+        return "OK"
 
 def defeat_single_byte_xor(hex, detecting=False):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex), detecting)
@@ -1251,3 +1253,21 @@ def defeat_sha1_signing(message, signature, new_message_suffix, sign_callback=la
 
     assert False, "couldn't guess password length"
     return {}
+
+def defeat_hmac_timing(app, filename):
+    TRIES = 1
+    sig = "A" * 40 # chars in an SHA1 hash in hex as a string
+    for i in range(len(sig)):
+        timings = {}
+        for c in "0123456789abcdef":
+            # NB. can improve this by working out the timing difference and breaking early
+            sig = sig[:i] + c + sig[i+1:]
+            now = time.time()
+            for j in range(TRIES):
+                app.request("/test?file=%s&signature=%s" % (filename, sig))
+            timings[time.time() - now] = c
+        best_key = max([k for k in timings.keys()])
+        sig = sig[:i] + timings[best_key] + sig[i+1:]
+        print sig
+    return sig
+
