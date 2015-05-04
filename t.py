@@ -5,6 +5,7 @@ import random  # for randint
 import time    # for time.time()
 import sys     # for sys.stdout.flush/write
 from Crypto.Cipher import AES  # pip install PyCrypto
+import web     # pip install web.py
 
 def bytes_to_base64_array(bytes_in):
     r = []
@@ -83,6 +84,13 @@ def base64_to_hex(b64):
 
 def base64_to_str(b64):
     return ''.join([chr(b) for b in base64_to_bytes(b64)])
+
+def num_to_str(n, sz):
+    s = ""
+    for i in range(sz):
+        s = chr(n & 0xFF) + s
+        n >>= 8
+    return s
 
 def left_rotate(num, bits):
     return ((num << bits) | ((num & 0xffffffff) >> (32 - bits))) & 0xffffffff
@@ -284,6 +292,23 @@ def sha1(s, ra=0x67452301, rb=0xEFCDAB89, rc=0x98BADCFE, rd=0x10325476, re=0xC3D
 
     # Produce the final hash value (big-endian) as a 160 bit number:
     return (h0 << 128) | (h1 << 96) | (h2 << 64) | (h3 << 32) | h4
+
+def hmac(message, key, algo=sha1, algo_blocksize=20):
+    # if (length(key) > blocksize) then
+    #     key = hash(key) // keys longer than blocksize are shortened
+    # if (length(key) < blocksize) then
+    #     key = key || [0x00 * (blocksize - length(key))] // keys shorter than blocksize are zero-padded
+    #                                                        (where || is concatenation)
+    # o_key_pad = [0x5c * blocksize] xor key // Where blocksize is that of the underlying hash function
+    # i_key_pad = [0x36 * blocksize] xor key // Where xor is exclusive or (XOR)
+    # return hash(o_key_pad || hash(i_key_pad || message)) // Where || is concatenation
+    if len(key) > algo_blocksize:
+        key = num_to_str(algo(key), algo_blocksize)
+    if len(key) < algo_blocksize:
+        key += chr(0) * (algo_blocksize - len(key))
+    o_key_pad = fixed_xor(chr(0x5c) * algo_blocksize, key)
+    i_key_pad = fixed_xor(chr(0x36) * algo_blocksize, key)
+    return algo(o_key_pad + num_to_str(algo(i_key_pad + message), algo_blocksize))
 
 def encrypt_aes_128_ecb(s, key):
     o = AES.new(key, AES.MODE_ECB)
@@ -656,6 +681,30 @@ class MTHack:
 
         assert False, "couldn't find seed for %s, offset %d" % ([hex(n) for n in nums], offset)
 
+def get_file_app():
+    app = web.application(('/test', 'FileApp'), globals())
+    return app
+
+def insecure_compare(s1, s2, delay=50):
+    if len(s1) != len(s2):
+        return False
+    for i in range(len(s1)):
+        if s1[i] != s2[i]:
+            return False
+        time.sleep(delay / 1000)
+    return True
+
+class FileApp:
+    def __init__(self):
+        self.hmac_key = "test" #random_aes_key()
+
+    def GET(self):
+        data = web.input()
+        real_hmac = ""
+        with open(data.file, 'r') as FILE:
+            real_hmac = "%x" % hmac(FILE.read(), self.hmac_key)
+        if not insecure_compare(real_hmac, data.signature):
+            raise web.HTTPError("500 internal error: signature mismatch")
 
 def defeat_single_byte_xor(hex, detecting=False):
     return defeat_single_byte_xor_bytes(hex_to_bytes(hex), detecting)
